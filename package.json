@@ -1,0 +1,30 @@
+{
+  "name": "tor-streamer",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "node dist/index.js",
+    "build": "tsc",
+    "dev": "nodemon"
+  },
+  "type": "module",
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@types/express": "^5.0.0",
+    "@types/torrent-search-api": "^2.0.3",
+    "@types/torrent-stream": "^0.0.9",
+    "express": "^4.21.2",
+    "parse-torrent": "^11.0.18",
+    "torrent-search-api": "^2.1.4",
+    "torrent-stream": "^1.2.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "nodemon": "^3.1.9",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.2"
+  }
+}
