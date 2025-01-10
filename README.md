@@ -29,7 +29,7 @@ npm start
 
 ### Search for torrents
 
-**endpoint : GET /search**
+**endpoint : GET /api/search**
 
 queries :
 
@@ -84,7 +84,7 @@ request url : http://localhost:8080/search?query=any_search_query&limit=3
 
 Get the magnet URI from the search response and use it to stream the video
 
-**endpoint : GET /stream**
+**endpoint : GET /api/stream**
 
 queries :
 

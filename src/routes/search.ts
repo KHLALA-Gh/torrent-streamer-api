@@ -1,4 +1,4 @@
-import { query, Router } from "express";
+import { Router } from "express";
 import torSearch from "torrent-search-api";
 import { Torrent } from "../types/search";
 
@@ -12,6 +12,7 @@ router.get("/search", async (req, res) => {
   if (!providers || typeof providers != "string") {
     torSearch.enablePublicProviders();
   } else {
+    torSearch.disableAllProviders();
     let pros = providers.split(",");
     for (let p of pros) {
       torSearch.enableProvider(p);
