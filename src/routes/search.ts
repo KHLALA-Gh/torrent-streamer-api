@@ -1,12 +1,12 @@
 import { Router } from "express";
 import torSearch from "torrent-search-api";
-import { Torrent } from "../types/search";
+import { Torrent } from "../types/search.js";
 
 torSearch.enableProvider("YTS");
 
 const router = Router();
 
-router.get("/search", async (req, res) => {
+router.get("/api/search", async (req, res) => {
   const providers = req.query.providers;
 
   if (!providers || typeof providers != "string") {

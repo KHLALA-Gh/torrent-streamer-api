@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { trackers } from "../trackers.ts";
+import { trackers } from "../trackers.js";
 const router = Router();
 
 function createMagnetLink(
