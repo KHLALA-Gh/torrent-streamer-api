@@ -13,7 +13,17 @@ app.use(streamRouter);
 app.use(searchRouter);
 
 app.use(getMagnetURI);
+process.on("SIGTERM", () => {
+  console.log("SIGTERM received. Cleaning up...");
+  setTimeout(() => {
+    process.exit(0);
+  }, 2000);
+  server.close(() => {
+    console.log("Server closed.");
+    process.exit(0);
+  });
+});
 
-app.listen(PORT, () => {
+let server = app.listen(PORT, () => {
   console.log(`express server is listening on port ${PORT}`);
 });
