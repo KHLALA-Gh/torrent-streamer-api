@@ -1,6 +1,6 @@
 {
   "name": "torrent-streamer-api",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
@@ -8,6 +8,13 @@
   ],
   "scripts": {
     "build": "tsc"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/KHLALA-Gh/torrent-streamer-api/"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "type": "module",
   "keywords": [],
@@ -18,19 +25,13 @@
     "@types/express": "^5.0.0",
     "@types/torrent-search-api": "^2.0.3",
     "@types/torrent-stream": "^0.0.9",
-    "axios": "^1.7.9",
     "express": "^4.21.2",
-    "parse-torrent": "^11.0.18",
     "torrent-search-api": "^2.1.4",
     "torrent-stream": "^1.2.1"
   },
   "devDependencies": {
     "@changesets/cli": "^2.27.11",
-    "@types/cors": "^2.8.17",
     "@types/node": "^22.10.5",
-    "@types/parse-torrent": "^5.8.7",
-    "nodemon": "^3.1.9",
-    "ts-node": "^10.9.2",
     "typescript": "^5.7.2"
   }
 }

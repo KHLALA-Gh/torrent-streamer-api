@@ -1,7 +1,5 @@
 import { Router } from "express";
-import { console } from "inspector";
 import torrentStream from "torrent-stream";
-import { log } from "console";
 import { HandlerConfig } from "../types/config";
 
 function sleep(ms: number) {
@@ -81,14 +79,6 @@ export function stream(router: Router, config: Partial<HandlerConfig>) {
           console.log("request closed engine destroyed");
         });
       });
-
-      if (config.streamTimeOut !== 0) {
-        await sleep(config.streamTimeOut || 1 * 10000);
-        log("wawawa");
-        res.status(408).json({
-          error: "Could not stream the given magnet URI : Time Out.",
-        });
-      }
     } catch (err) {
       res.status(500).json({
         error: "Internal Server Error",
