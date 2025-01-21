@@ -1,9 +1,11 @@
 {
   "name": "torrent-streamer-api",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "files": ["dist/**/*"],
+  "files": [
+    "dist/**/*"
+  ],
   "scripts": {
     "build": "tsc"
   },
@@ -23,6 +25,7 @@
     "torrent-stream": "^1.2.1"
   },
   "devDependencies": {
+    "@changesets/cli": "^2.27.11",
     "@types/cors": "^2.8.17",
     "@types/node": "^22.10.5",
     "@types/parse-torrent": "^5.8.7",
