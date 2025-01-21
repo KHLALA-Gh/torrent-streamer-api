@@ -1,6 +1,7 @@
 import { Router } from "express";
 import torSearch from "torrent-search-api";
 import { Torrent } from "../types/search.js";
+import { HandlerConfig } from "../types/config.js";
 
 export function search(router: Router, config: Partial<HandlerConfig>) {
   router.get("/api/search", async (req, res) => {

@@ -2,6 +2,7 @@ import { Router } from "express";
 import { console } from "inspector";
 import torrentStream from "torrent-stream";
 import { log } from "console";
+import { HandlerConfig } from "../types/config";
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));

@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { trackers } from "../trackers.js";
+import { HandlerConfig } from "../types/config.js";
 
 function createMagnetLink(
   infoHash: string,
