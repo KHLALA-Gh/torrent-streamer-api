@@ -27,14 +27,14 @@
   "dependencies": {
     "express": "^4.21.2",
     "torrent-search-api": "^2.1.4",
-    "torrent-stream": "^1.2.1"
+    "webtorrent": "^2.5.14"
   },
   "devDependencies": {
-    "@types/express": "^5.0.0",
-    "@types/torrent-search-api": "^2.0.3",
-    "@types/torrent-stream": "^0.0.9",
     "@changesets/cli": "^2.27.11",
+    "@types/express": "^5.0.0",
     "@types/node": "^22.10.5",
+    "@types/torrent-search-api": "^2.0.3",
+    "@types/webtorrent": "^0.110.0",
     "typescript": "^5.7.2"
   }
 }
