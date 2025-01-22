@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { trackers } from "../trackers.js";
-const router = Router();
+import { HandlerConfig } from "../types/config.js";
 
 function createMagnetLink(
   infoHash: string,
@@ -18,27 +18,29 @@ function createMagnetLink(
   return magnetLink;
 }
 
-router.get("/api/get_magnet_uri", async (req, res) => {
-  const hash = req.query.hash;
-  if (typeof hash != "string") {
-    res.status(400).json({
-      err: "torrent hash is required",
-    });
-    return;
-  }
+export function getMagnet(router: Router, config: Partial<HandlerConfig>) {
+  router.get("/api/get_magnet_uri", async (req, res) => {
+    const hash = req.query.hash;
+    if (typeof hash != "string") {
+      res.status(400).json({
+        err: "torrent hash is required",
+      });
+      return;
+    }
 
-  try {
-    const magnetURI = createMagnetLink(hash, trackers);
+    try {
+      const magnetURI = createMagnetLink(hash, trackers);
 
-    res.status(200).json({
-      magnetURI,
-    });
-  } catch (err) {
-    console.log("error when gettin magnet uri : ", err);
-    res.status(500).json({
-      err: "server error",
-    });
-  }
-});
+      res.status(200).json({
+        magnetURI,
+      });
+    } catch (err) {
+      console.log("error when gettin magnet uri : ", err);
+      res.status(500).json({
+        err: "server error",
+      });
+    }
+  });
+}
 
-export default router;
+export default getMagnet;

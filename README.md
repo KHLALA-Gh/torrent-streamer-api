@@ -6,26 +6,29 @@ The Torrent Streamer API is a RESTful API built with Node.js and the Express lib
 
 ## How to run the API
 
-install all dependencies
+install the library
 
 ```shell
-npm i
-```
-
-### DEV Mode
-
-```shell
-npm run dev
-```
-
-### Production Mode
-
-```shell
-npm run build
-npm start
+npm i torrent-streamer-api
 ```
 
 ## How to use it ?
+
+```js
+import express from "express";
+import TorrentStreamerApi from "torrent-streamer-api";
+
+const app = express();
+const PORT = 8080;
+
+const router = TorrentStreamerApi({});
+
+app.use(router);
+
+let server = app.listen(PORT, () => {
+  console.log(`express server is listening on port ${PORT}`);
+});
+```
 
 ### Search for torrents
 
