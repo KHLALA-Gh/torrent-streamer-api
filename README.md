@@ -41,8 +41,6 @@ queries :
 - providers : torrent providers (if not set it will be all public providers)
 - limit : the limit of torrents (if not set it will be 20)
 
-|> Note : setting an invalid provider will crash the server, this issue will be fixed soon
-
 **example :**
 request url : http://localhost:8080/search?query=any_search_query&limit=3
 

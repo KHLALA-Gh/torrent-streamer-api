@@ -2,11 +2,7 @@ import { Router } from "express";
 import { HandlerConfig } from "../types/config";
 import { Streamer } from "../lib/streamer.js";
 
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-export function stream(router: Router, config: Partial<HandlerConfig>) {
+export function stream(router: Router, _: Partial<HandlerConfig>) {
   router.get("/api/stream", async (req, res) => {
     try {
       if (!req.query.magnet || typeof req.query.magnet != "string") {
@@ -16,18 +12,15 @@ export function stream(router: Router, config: Partial<HandlerConfig>) {
         return;
       }
       const magnetURI = req.query.magnet;
+      if (typeof magnetURI !== "string" || !magnetURI) {
+        res.status(400).json({
+          error: "magnetURI is required",
+        });
+        return;
+      }
       const range = req.headers.range;
       const streamer = new Streamer(magnetURI);
-      streamer.stream(res, range);
-      req.on("close", () => {
-        streamer.destroy((err) => {
-          if (err) {
-            console.log("error while destroying streamer : " + err.toString());
-            return;
-          }
-          console.log("request closed : streamer destroyed");
-        });
-      });
+      await streamer.stream(res, range);
     } catch (err) {
       res.status(500).json({
         error: "Internal Server Error",

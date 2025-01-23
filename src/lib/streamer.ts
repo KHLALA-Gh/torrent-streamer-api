@@ -27,13 +27,15 @@ export class Streamer extends Webtorrent {
   }
 
   async stream(res: Response, range?: string) {
-    this.add(this.magnetURI, (torrent) => {
+    let torrent = this.add(this.magnetURI, (torrent) => {
       const file = torrent.files.find((f) => f.name.endsWith(".mp4"));
+
       if (!file) {
-        throw new StreamerErr(
-          "Mp4 file not found for infoHash : " + torrent.infoHash,
-          StreamerErrCode.MP4FILE_NOTFOUND
-        );
+        console.log("MP4 file not found for info hash : " + torrent.infoHash);
+        res.status(404).json({
+          error: "MP4 file not found for info hash : " + torrent.infoHash,
+        });
+        return;
       }
       if (!range) {
         const start = 0;
@@ -63,7 +65,6 @@ export class Streamer extends Webtorrent {
           "Content-Length": chunkSize,
           "Content-Type": "video/mp4",
         });
-
         const stream = file.createReadStream({ start, end });
         stream.pipe(res);
 
@@ -73,5 +74,15 @@ export class Streamer extends Webtorrent {
         });
       }
     });
+    res.on("close", () => {
+      torrent.destroy({}, (err) => {
+        if (err) {
+          console.log("error while destroying streamer : " + err.toString());
+          return;
+        }
+        console.log("response closed : streamer destroyed");
+      });
+    });
+    return torrent;
   }
 }
