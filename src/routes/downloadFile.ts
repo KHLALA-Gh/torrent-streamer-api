@@ -6,19 +6,22 @@ import { trackers, wsTrackers } from "../trackers.js";
 import { decodeToUTF8 } from "../lib/encoder.js";
 
 export function downloadFile(router: Router, config: Partial<HandlerConfig>) {
-  router.get("/api/torrents/:hash/files/:path", (req, res) => {
+  router.get("/api/torrents/:hash/files/:path", async (req, res) => {
     try {
       const path = decodeToUTF8(req.params.path);
       const hash = req.params.hash;
       const magnetURI = createMagnetLink(hash, trackers, wsTrackers);
       const range = req.headers.range;
       let to = setTimeout(() => {
-        res.json({
-          error: "Request timeout",
-        });
+        if (!res.headersSent) {
+          res.json({ error: "Request timeout" });
+        }
       }, config.torrentFilesTimeout || 10 * 1000);
       let streamer = new Streamer(magnetURI);
-      streamer.streamFile(res, path, range);
+      streamer.streamFile(res, path, range, () => {
+        clearTimeout(to);
+        return !res.headersSent;
+      });
       res.on("close", () => {
         clearTimeout(to);
         streamer.destroy((err) => {

@@ -86,7 +86,12 @@ export class Streamer extends Webtorrent {
     });
     return torrent;
   }
-  async streamFile(res: Response, path: string, range?: string) {
+  async streamFile(
+    res: Response,
+    path: string,
+    range?: string,
+    callback?: () => boolean
+  ) {
     if (!path) {
       throw new StreamerErr(
         `${path} path is invalid`,
@@ -101,6 +106,9 @@ export class Streamer extends Webtorrent {
         res.status(404).json({
           error: "file not found for info hash : " + torrent.infoHash,
         });
+        return;
+      }
+      if (callback && !callback()) {
         return;
       }
       if (!range) {

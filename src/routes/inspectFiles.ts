@@ -5,7 +5,7 @@ import { TorrentMetaData } from "../types/torrent";
 import { encodeTo64 } from "../lib/encoder.js";
 
 export function getFiles(router: Router, config: Partial<HandlerConfig>) {
-  router.get("/api/torrents/:hash/files", (req, res) => {
+  router.get("/api/torrents/:hash/files", async (req, res) => {
     try {
       let hash = req.params.hash;
       let client = new WebTorrent();
@@ -37,6 +37,7 @@ export function getFiles(router: Router, config: Partial<HandlerConfig>) {
         }
       });
       client.add(hash, (torrent) => {
+        clearTimeout(to);
         let torrents: TorrentMetaData[] = [];
         torrent.files.map((t) => {
           torrents.push({
