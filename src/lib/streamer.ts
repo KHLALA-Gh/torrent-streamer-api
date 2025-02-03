@@ -119,6 +119,7 @@ export class Streamer extends Webtorrent {
         res.writeHead(200, {
           "Content-Length": file.length,
           "Content-Type": "application/octet-stream",
+          "Content-Disposition": `attachment; filename="${file.name}"`,
         });
 
         stream.pipe(res);
@@ -138,6 +139,7 @@ export class Streamer extends Webtorrent {
           "Accept-Ranges": "bytes",
           "Content-Length": chunkSize,
           "Content-Type": "application/octet-stream",
+          "Content-Disposition": `attachment; filename="${file.name}"`,
         });
         const stream = file.createReadStream({ start, end });
         stream.pipe(res);
