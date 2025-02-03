@@ -4,6 +4,7 @@ import getMagnet from "./routes/magnet.js";
 import { search } from "./routes/search.js";
 import { HandlerConfig } from "./types/config.js";
 import { getFiles } from "./routes/inspectFiles.js";
+import { downloadFile } from "./routes/downloadFile.js";
 
 /**
  * The Torrent Streamer Api Handlers
@@ -16,5 +17,6 @@ export function TorrentStreamerApi(config: Partial<HandlerConfig>) {
   getMagnet(router, config);
   search(router, config);
   getFiles(router, config);
+  downloadFile(router, config);
   return router;
 }

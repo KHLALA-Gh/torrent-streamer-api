@@ -1,11 +1,12 @@
-import { Request, Response } from "express";
+import { Response } from "express";
 import Webtorrent from "webtorrent";
 
-enum StreamerErrCode {
+export enum StreamerErrCode {
   "MP4FILE_NOTFOUND",
+  "INVALID_PATH",
 }
 
-class StreamerErr extends Error {
+export class StreamerErr extends Error {
   code: StreamerErrCode;
   constructor(msg: string, code: StreamerErrCode) {
     super(msg);
@@ -26,7 +27,7 @@ export class Streamer extends Webtorrent {
     });
   }
 
-  async stream(res: Response, range?: string) {
+  stream(res: Response, range?: string) {
     let torrent = this.add(this.magnetURI, (torrent) => {
       const file = torrent.files.find((f) => f.name.endsWith(".mp4"));
 
@@ -82,6 +83,62 @@ export class Streamer extends Webtorrent {
         }
         console.log("response closed : streamer destroyed");
       });
+    });
+    return torrent;
+  }
+  async streamFile(res: Response, path: string, range?: string) {
+    if (!path) {
+      throw new StreamerErr(
+        `${path} path is invalid`,
+        StreamerErrCode.INVALID_PATH
+      );
+    }
+    let torrent = this.add(this.magnetURI, (torrent) => {
+      const file = torrent.files.find((f) => f.path === path);
+
+      if (!file) {
+        console.log(`file not found for info hash : ${torrent.infoHash}`);
+        res.status(404).json({
+          error: "file not found for info hash : " + torrent.infoHash,
+        });
+        return;
+      }
+      if (!range) {
+        const start = 0;
+        const end = file.length - 1;
+        const stream = file.createReadStream({ start, end });
+
+        res.writeHead(200, {
+          "Content-Length": file.length,
+          "Content-Type": "application/octet-stream",
+        });
+
+        stream.pipe(res);
+        stream.on("error", (err) => {
+          console.error("Stream error:", err);
+          res.end();
+        });
+      } else {
+        const positions = range.replace(/bytes=/, "").split("-");
+        const start = parseInt(positions[0], 10);
+        const end = positions[1] ? parseInt(positions[1], 10) : file.length - 1;
+
+        const chunkSize = end - start + 1;
+
+        res.writeHead(206, {
+          "Content-Range": `bytes ${start}-${end}/${file.length}`,
+          "Accept-Ranges": "bytes",
+          "Content-Length": chunkSize,
+          "Content-Type": "application/octet-stream",
+        });
+        const stream = file.createReadStream({ start, end });
+        stream.pipe(res);
+
+        stream.on("error", (err) => {
+          console.error("Stream error:", err);
+          res.end();
+        });
+      }
     });
     return torrent;
   }

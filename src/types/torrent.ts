@@ -3,4 +3,8 @@ export interface TorrentMetaData {
   path: string;
   size: number;
   streamUrl?: string;
+  /**
+   * File path encoded to base 64
+   */
+  path64: string;
 }

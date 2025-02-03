@@ -2,6 +2,7 @@ import { Router } from "express";
 import { HandlerConfig } from "../types/config";
 import WebTorrent from "webtorrent";
 import { TorrentMetaData } from "../types/torrent";
+import { encodeTo64 } from "../lib/encoder.js";
 
 export function getFiles(router: Router, config: Partial<HandlerConfig>) {
   router.get("/api/torrents/:hash/files", (req, res) => {
@@ -42,6 +43,7 @@ export function getFiles(router: Router, config: Partial<HandlerConfig>) {
             name: t.name,
             path: t.path,
             size: t.length,
+            path64: encodeTo64(t.path),
           });
         });
         res.status(200).json(torrents);
