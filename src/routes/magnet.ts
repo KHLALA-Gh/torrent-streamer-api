@@ -2,7 +2,7 @@ import { Router } from "express";
 import { trackers } from "../trackers.js";
 import { HandlerConfig } from "../types/config.js";
 
-function createMagnetLink(
+export function createMagnetLink(
   infoHash: string,
   trackers: string[] = [],
   ws: string[] = []
