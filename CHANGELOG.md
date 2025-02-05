@@ -1,5 +1,11 @@
 # torrent-streamer-api
 
+## 1.0.0
+
+### Major Changes
+
+- 10c941e: Add inspect files from torrent feature and download a choosen file feature.
+
 ## 0.2.0
 
 ### Minor Changes
