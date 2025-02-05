@@ -10,6 +10,7 @@ export function getFiles(router: Router, config: Partial<HandlerConfig>) {
       let hash = req.params.hash;
       let client = new WebTorrent();
       let to = setTimeout(() => {
+        if (res.headersSent) return;
         res.json([]);
       }, config.torrentFilesTimeout || 10 * 1000);
       req.on("close", () => {
@@ -22,6 +23,7 @@ export function getFiles(router: Router, config: Partial<HandlerConfig>) {
         });
       });
       client.on("error", (err) => {
+        if (res.headersSent) return;
         if (err.toString().includes("Invalid torrent identifier")) {
           res.status(400).json({
             error: "Invalid torrent hash.",
