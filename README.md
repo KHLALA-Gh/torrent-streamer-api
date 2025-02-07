@@ -83,13 +83,16 @@ request url : http://localhost:8080/api/search?query=any_search_query&limit=3
 
 ### How to stream
 
-Get the magnet URI from the search response and use it to stream the video. The server will look for an mp4 file, the first file found will be streamed.
+You can stream an mp4 file from a torrent.
 
 **endpoint : GET /api/stream**
 
 queries :
 
 - magnet : magnet URI
+- path64 : the path of the mp4 file encoded in base64 (optional)
+
+> Note : if path64 is not set the server will look for an mp4 file, the first file found will be streamed.
 
 **example :**
 

@@ -27,9 +27,21 @@ export class Streamer extends Webtorrent {
     });
   }
 
-  stream(res: Response, range?: string) {
+  stream(res: Response, filePath?: string, range?: string) {
     let torrent = this.add(this.magnetURI, (torrent) => {
-      const file = torrent.files.find((f) => f.name.endsWith(".mp4"));
+      if (filePath && !filePath.endsWith(".mp4")) {
+        res.status(400).json({
+          error: "the provided file is not an mp4 file.",
+        });
+        return;
+      }
+      const file = torrent.files.find((f) => {
+        if (filePath) {
+          return f.path === filePath;
+        } else {
+          return f.name.endsWith(".mp4");
+        }
+      });
 
       if (!file) {
         console.log("MP4 file not found for info hash : " + torrent.infoHash);
