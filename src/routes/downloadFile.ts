@@ -34,7 +34,7 @@ export function downloadFile(
         if (!res.headersSent) {
           res.json({ error: "Request timeout" });
         }
-      }, config.torrentFilesTimeout || 10 * 1000);
+      }, config?.torrentFilesTimeout || 10 * 1000);
       let streamer = new Streamer(magnetURI);
       streamer.streamFile(res, path, range, (file) => {
         state.openStreams.setStream(ip, {
