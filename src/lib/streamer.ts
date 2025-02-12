@@ -19,6 +19,15 @@ export class StreamerErr extends Error {
   }
 }
 
+export const contentType: { [T: string]: string } = {
+  mp4: "video/mp4",
+  webm: "video/webm",
+  mkv: "video/x-matroska",
+  avi: "video/x-msvideo",
+  mov: "video/quicktime",
+  mpg: "video/mpeg",
+};
+
 export class Streamer extends Webtorrent {
   magnetURI: string;
   constructor(magnetURI: string) {
@@ -123,6 +132,8 @@ export class Streamer extends Webtorrent {
       if (callback && !callback(file)) {
         return;
       }
+      let fileExt = file.name.split(".").pop() || "";
+      let contentTypeValue = contentType[fileExt] || "application/octet-stream";
       if (!range) {
         const start = 0;
         const end = file.length - 1;
@@ -130,7 +141,7 @@ export class Streamer extends Webtorrent {
 
         res.writeHead(200, {
           "Content-Length": file.length,
-          "Content-Type": "application/octet-stream",
+          "Content-Type": contentTypeValue,
           "Content-Disposition": `attachment; filename="${file.name}"`,
         });
 
@@ -150,7 +161,7 @@ export class Streamer extends Webtorrent {
           "Content-Range": `bytes ${start}-${end}/${file.length}`,
           "Accept-Ranges": "bytes",
           "Content-Length": chunkSize,
-          "Content-Type": "application/octet-stream",
+          "Content-Type": contentTypeValue,
           "Content-Disposition": `attachment; filename="${file.name}"`,
         });
         const stream = file.createReadStream({ start, end });
