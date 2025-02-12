@@ -1,5 +1,7 @@
 import { Response } from "express";
+import WebTorrent from "webtorrent";
 import Webtorrent from "webtorrent";
+import { StreamState } from "../types/config";
 
 export enum StreamerErrCode {
   "MP4FILE_NOTFOUND",
@@ -17,6 +19,15 @@ export class StreamerErr extends Error {
   }
 }
 
+export const contentType: { [T: string]: string } = {
+  mp4: "video/mp4",
+  webm: "video/webm",
+  mkv: "video/x-matroska",
+  avi: "video/x-msvideo",
+  mov: "video/quicktime",
+  mpg: "video/mpeg",
+};
+
 export class Streamer extends Webtorrent {
   magnetURI: string;
   constructor(magnetURI: string) {
@@ -26,16 +37,35 @@ export class Streamer extends Webtorrent {
       console.log(err);
     });
   }
-
-  stream(res: Response, range?: string) {
+  stream(
+    res: Response,
+    filePath?: string,
+    range?: string,
+    callback?: (file: WebTorrent.TorrentFile) => boolean
+  ) {
     let torrent = this.add(this.magnetURI, (torrent) => {
-      const file = torrent.files.find((f) => f.name.endsWith(".mp4"));
+      if (filePath && !filePath.endsWith(".mp4")) {
+        res.status(400).json({
+          error: "the provided file is not an mp4 file.",
+        });
+        return;
+      }
+      const file = torrent.files.find((f) => {
+        if (filePath) {
+          return f.path === filePath;
+        } else {
+          return f.name.endsWith(".mp4");
+        }
+      });
 
       if (!file) {
         console.log("MP4 file not found for info hash : " + torrent.infoHash);
         res.status(404).json({
           error: "MP4 file not found for info hash : " + torrent.infoHash,
         });
+        return;
+      }
+      if (callback && !callback(file)) {
         return;
       }
       if (!range) {
@@ -75,22 +105,13 @@ export class Streamer extends Webtorrent {
         });
       }
     });
-    res.on("close", () => {
-      torrent.destroy({}, (err) => {
-        if (err) {
-          console.log("error while destroying streamer : " + err.toString());
-          return;
-        }
-        console.log("response closed : streamer destroyed");
-      });
-    });
     return torrent;
   }
   async streamFile(
     res: Response,
     path: string,
     range?: string,
-    callback?: () => boolean
+    callback?: (file: WebTorrent.TorrentFile) => boolean
   ) {
     if (!path) {
       throw new StreamerErr(
@@ -108,9 +129,11 @@ export class Streamer extends Webtorrent {
         });
         return;
       }
-      if (callback && !callback()) {
+      if (callback && !callback(file)) {
         return;
       }
+      let fileExt = file.name.split(".").pop() || "";
+      let contentTypeValue = contentType[fileExt] || "application/octet-stream";
       if (!range) {
         const start = 0;
         const end = file.length - 1;
@@ -118,7 +141,7 @@ export class Streamer extends Webtorrent {
 
         res.writeHead(200, {
           "Content-Length": file.length,
-          "Content-Type": "application/octet-stream",
+          "Content-Type": contentTypeValue,
           "Content-Disposition": `attachment; filename="${file.name}"`,
         });
 
@@ -138,7 +161,7 @@ export class Streamer extends Webtorrent {
           "Content-Range": `bytes ${start}-${end}/${file.length}`,
           "Accept-Ranges": "bytes",
           "Content-Length": chunkSize,
-          "Content-Type": "application/octet-stream",
+          "Content-Type": contentTypeValue,
           "Content-Disposition": `attachment; filename="${file.name}"`,
         });
         const stream = file.createReadStream({ start, end });
@@ -151,5 +174,45 @@ export class Streamer extends Webtorrent {
       }
     });
     return torrent;
+  }
+}
+
+export class StreamsState {
+  public openStreams: Map<string, StreamState[]>;
+  constructor() {
+    this.openStreams = new Map<string, StreamState[]>();
+  }
+  getStreamCount(ip: string): number {
+    let opS = this.openStreams.get(ip);
+    if (opS) {
+      return opS.length;
+    }
+    return 0;
+  }
+  setStream(ip: string, streamInfo: StreamState) {
+    let opS = this.openStreams.get(ip);
+
+    if (opS) {
+      this.openStreams.set(ip, [...opS, streamInfo]);
+    } else {
+      this.openStreams.set(ip, [streamInfo]);
+    }
+  }
+  ipOpenStreamsTable(): { ip: string; openStreams: number }[] {
+    let table: { ip: string; openStreams: number }[] = [];
+    this.openStreams.forEach((v, k) => {
+      table.push({
+        ip: k,
+        openStreams: v.length,
+      });
+    });
+    return table;
+  }
+  removeStream(ip: string, id: string) {
+    let opS = this.openStreams.get(ip);
+    if (opS) {
+      opS = opS.filter((v) => v.id !== id);
+      this.openStreams.set(ip, opS);
+    }
   }
 }
