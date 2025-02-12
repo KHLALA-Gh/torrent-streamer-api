@@ -19,7 +19,8 @@
   "type": "module",
   "keywords": [
     "torrent",
-    "torrent stream"
+    "torrent stream",
+    "video streaming"
   ],
   "author": "khlala",
   "license": "Apache-2.0",
