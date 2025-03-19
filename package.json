@@ -27,7 +27,7 @@
   "description": "Node.js express router for streaming videos from magnet URIs.",
   "dependencies": {
     "express": "^4.21.2",
-    "torrent-search-api": "^2.1.4",
+    "torrent-agent": "^0.1.0",
     "webtorrent": "^2.5.14"
   },
   "devDependencies": {
