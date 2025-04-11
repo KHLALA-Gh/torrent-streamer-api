@@ -52,6 +52,7 @@ export function getFiles(router: Router, config: Partial<HandlerConfig>) {
         res.status(200).json(torrents);
       });
     } catch (err) {
+      console.log("error when requesting torrent files :",err)
       res.status(500).json({
         error: "Internal Server Error",
       });

@@ -1,18 +1,22 @@
 import { Router } from "express";
 import { HandlerConfig } from "../types/config.js";
 import TorrentAgent from "torrent-agent";
-import { Torrent } from "torrent-agent/dist/scrapers/scraper.js";
-import { DefaultScrapers } from "torrent-agent/dist/query.js";
+import { Scraper1337x } from "torrent-agent";
 
 export function search(router: Router, config: Partial<HandlerConfig>) {
-  const agent = new TorrentAgent();
+  const agent = new TorrentAgent({
+    QueriesConcurrency : config.queryConcurrency
+  });
   router.get("/api/search", async (req, res) => {
     try {
-      let limitQ = req.query.limit;
-      let limit = 20;
-      if (limitQ && !isNaN(+limitQ)) {
-        limit = +limitQ;
+      let limit = config.defaultSearchLimit || 20;
+      if (config.chooseSearchLimit){
+        let limitQ = req.query.limit;
+        if (limitQ && !isNaN(+limitQ)) {
+          limit = +limitQ;
+        }
       }
+      limit = (config.maxSearchLimit || 100) < limit ? config.maxSearchLimit || 100 : limit
       let q = req.query.query;
       if (!q || typeof q != "string") {
         res.status(400).json({
@@ -27,9 +31,9 @@ export function search(router: Router, config: Partial<HandlerConfig>) {
         searchQuery: q,
         options: {
           limit: limit,
-          concurrency: 10,
+          concurrency: config.searchConcurrency || 5,
         },
-        scrapers: DefaultScrapers,
+        scrapers: [new Scraper1337x()],
       });
 
       query.on("torrent", (t) => {

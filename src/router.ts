@@ -2,7 +2,7 @@ import { Router } from "express";
 import stream from "./routes/stream.js";
 import getMagnet from "./routes/magnet.js";
 import { search } from "./routes/search.js";
-import { HandlerConfig, State } from "./types/config.js";
+import { defaultConf, HandlerConfig, State } from "./types/config.js";
 import { getFiles } from "./routes/inspectFiles.js";
 import { downloadFile } from "./routes/downloadFile.js";
 import { StreamsState } from "./lib/streamer.js";
@@ -12,7 +12,9 @@ import { StreamsState } from "./lib/streamer.js";
  * @param config configurations
  * @returns Express Router
  */
-export function TorrentStreamerApi(config: Partial<HandlerConfig>) {
+export function TorrentStreamerApi(config?: Partial<HandlerConfig>) {
+  config = { ...defaultConf, ...config };
+
   const router = Router();
   const state: State = {
     openStreams: new StreamsState(),
