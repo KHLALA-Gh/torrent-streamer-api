@@ -39,6 +39,9 @@ export function search(router: Router, config: Partial<HandlerConfig>) {
       query.on("torrent", (t) => {
         res.write(`data: ${JSON.stringify(t)}\n\n`);
       });
+      query.on("error", (err) => {
+        console.log("error :",err.message)
+      });
       query.on("done", () => {
         res.end();
       });
