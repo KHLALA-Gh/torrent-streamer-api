@@ -2,7 +2,7 @@ import { Response } from "express";
 import WebTorrent from "webtorrent";
 import Webtorrent from "webtorrent";
 import { StreamState } from "../types/config";
-
+import ffmpeg from "fluent-ffmpeg";
 export enum StreamerErrCode {
   "MP4FILE_NOTFOUND",
   "INVALID_PATH",
@@ -175,8 +175,45 @@ export class Streamer extends Webtorrent {
     });
     return torrent;
   }
-}
+  async experimental_streamMVK(
+    res: Response,
+    path?: string,
+    callback?: (file: WebTorrent.TorrentFile) => boolean
+  ) {
+    let torrent = this.add(this.magnetURI, (torrent) => {
+      console.log(this.magnetURI);
 
+      const file = torrent.files.find(
+        (f) => path === f?.path || (!path && f.name.endsWith(".mkv"))
+      );
+      if (!file) {
+        res.status(404).json({
+          error: "mkv file not found",
+        });
+        return;
+      }
+      if (typeof callback === "function") {
+        let cont = callback(file);
+        if (!cont) return;
+      }
+      res.writeHead(200, {
+        "Content-Type": "video/mp4",
+        "Transfer-Encoding": "chunked",
+        "Accept-Ranges": "none",
+      });
+      const stream = file.createReadStream();
+      //@ts-ignore
+      ffmpeg(stream)
+        .format("mp4")
+        .videoCodec("libx264")
+        .audioCodec("aac")
+        .outputOptions("-movflags frag_keyframe+empty_moov")
+        .on("error", (err) => console.error("ffmpeg error", err))
+        .pipe(res, { end: true });
+    });
+    return torrent;
+  }
+}
 export class StreamsState {
   public openStreams: Map<string, StreamState[]>;
   constructor() {

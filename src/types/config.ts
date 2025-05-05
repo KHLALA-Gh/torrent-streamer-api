@@ -18,26 +18,27 @@ export interface HandlerConfig {
    * The higher the number is, the faster the search.
    * If the number is too high you can get blocked from the search sites.
    */
-  searchConcurrency : number
+  searchConcurrency: number;
   /**
    * The number of concurrent search queries.
    * If too many queries are running in the same time torrent sites may block
    * the requests.
    */
-  queryConcurrency : number
+  queryConcurrency: number;
   /**
    * Default search max torrents
    */
-  defaultSearchLimit : number
+  defaultSearchLimit: number;
   /**
-   * Max search torrent limit 
+   * Max search torrent limit
    */
-  maxSearchLimit : number
+  maxSearchLimit: number;
   /**
    * choose search limit from request searchParams.
    * If set to false the limit will be fixed and take the **defaultSearchLimit** value.
    */
-  chooseSearchLimit : boolean
+  chooseSearchLimit: boolean;
+  enableExperimentalMKVStream: boolean;
 }
 
 export interface StreamState {
@@ -51,13 +52,14 @@ export interface State {
   openStreams: StreamsState;
 }
 
-export const defaultConf : HandlerConfig = {
-  streamTimeOut : 20*1000,
-  torrentFilesTimeout : 20*1000,
-  ipStreamLimit : 5,
-  searchConcurrency : 5,
-  queryConcurrency : 5,
-  defaultSearchLimit : 20,
-  maxSearchLimit : 100,
-  chooseSearchLimit : true
-}
+export const defaultConf: HandlerConfig = {
+  streamTimeOut: 20 * 1000,
+  torrentFilesTimeout: 20 * 1000,
+  ipStreamLimit: 5,
+  searchConcurrency: 5,
+  queryConcurrency: 5,
+  defaultSearchLimit: 20,
+  maxSearchLimit: 100,
+  chooseSearchLimit: true,
+  enableExperimentalMKVStream: false,
+};

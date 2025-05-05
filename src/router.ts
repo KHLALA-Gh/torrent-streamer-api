@@ -1,5 +1,5 @@
 import { Router } from "express";
-import stream from "./routes/stream.js";
+import stream, { experimental_streamMKV } from "./routes/stream.js";
 import getMagnet from "./routes/magnet.js";
 import { search } from "./routes/search.js";
 import { defaultConf, HandlerConfig, State } from "./types/config.js";
@@ -24,5 +24,8 @@ export function TorrentStreamerApi(config?: Partial<HandlerConfig>) {
   search(router, config);
   getFiles(router, config);
   downloadFile(router, config, state);
+  if (config.enableExperimentalMKVStream) {
+    experimental_streamMKV(router, config, state);
+  }
   return router;
 }
