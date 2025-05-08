@@ -44,12 +44,16 @@ export interface HandlerConfig {
 export interface StreamState {
   id: string;
   infoHash: string;
-  filePath: string;
-  size?: number;
+  preStream?: boolean;
 }
 
 export interface State {
   openStreams: StreamsState;
+  cache: Cache;
+}
+
+export interface Cache {
+  dirPath: string;
 }
 
 export const defaultConf: HandlerConfig = {

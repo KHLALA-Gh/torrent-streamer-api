@@ -26,6 +26,7 @@
   "license": "Apache-2.0",
   "description": "Node.js express router for streaming videos from magnet URIs.",
   "dependencies": {
+    "body-parser": "^2.2.0",
     "express": "^5.1.0",
     "fluent-ffmpeg": "^2.1.3",
     "torrent-agent": "^0.0.1",

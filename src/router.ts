@@ -6,6 +6,7 @@ import { defaultConf, HandlerConfig, State } from "./types/config.js";
 import { getFiles } from "./routes/inspectFiles.js";
 import { downloadFile } from "./routes/downloadFile.js";
 import { StreamsState } from "./lib/streamer.js";
+import { getPreStream, setPreStream } from "./routes/preStream.js";
 
 /**
  * The Torrent Streamer Api Handlers
@@ -18,6 +19,9 @@ export function TorrentStreamerApi(config?: Partial<HandlerConfig>) {
   const router = Router();
   const state: State = {
     openStreams: new StreamsState(),
+    cache: {
+      dirPath: "/tmp",
+    },
   };
   stream(router, config, state);
   getMagnet(router, config);
@@ -27,5 +31,7 @@ export function TorrentStreamerApi(config?: Partial<HandlerConfig>) {
   if (config.enableExperimentalMKVStream) {
     experimental_streamMKV(router, config, state);
   }
+  setPreStream(router, config, state);
+  getPreStream(router, config, state);
   return router;
 }

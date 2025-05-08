@@ -39,8 +39,10 @@ export function downloadFile(
       streamer.streamFile(res, path, range, (file) => {
         state.openStreams.setStream(ip, {
           id,
-          infoHash: hash,
-          filePath: file.path,
+          hash: hash,
+          path: file.path,
+          name: file.name,
+          size: file.length,
         });
         console.clear();
         console.table(state.openStreams.ipOpenStreamsTable());

@@ -8,3 +8,20 @@ export interface TorrentMetaData {
    */
   path64: string;
 }
+
+export interface TorrentFile {
+  id: string;
+  name: string;
+  path: string;
+  size: number;
+  torrentHash: string;
+}
+
+export interface Stream {
+  id: string;
+  name: string;
+  path: string;
+  size: number;
+  hash: string;
+  preStream?: boolean;
+}

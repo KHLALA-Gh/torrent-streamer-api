@@ -45,8 +45,10 @@ export function stream(
       await streamer.stream(res, decodeToUTF8(filePath64), range, (file) => {
         state.openStreams.setStream(ip, {
           id,
-          infoHash: magnetURI,
-          filePath: file.path,
+          hash: magnetURI,
+          path: file.path,
+          name: file.name,
+          size: file.length,
         });
         console.clear();
         console.table(state.openStreams.ipOpenStreamsTable());
@@ -113,8 +115,10 @@ export function experimental_streamMKV(
       streamer.experimental_streamMVK(res, decodeToUTF8(filePath64), (file) => {
         state.openStreams.setStream(ip, {
           id,
-          infoHash: magnetURI,
-          filePath: file.path,
+          hash: magnetURI,
+          path: file.path,
+          name: file.name,
+          size: file.length,
         });
         console.clear();
         console.table(state.openStreams.ipOpenStreamsTable());
