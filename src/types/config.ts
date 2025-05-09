@@ -1,4 +1,4 @@
-import { StreamsState } from "../lib/streamer";
+import { Streamer, StreamsState } from "../lib/streamer";
 
 export interface HandlerConfig {
   /**  Set a max duration to wait for the engine to be ready. (in ms)
@@ -50,6 +50,7 @@ export interface StreamState {
 export interface State {
   openStreams: StreamsState;
   cache: Cache;
+  streamer: Streamer;
 }
 
 export interface Cache {

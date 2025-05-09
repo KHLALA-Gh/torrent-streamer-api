@@ -9,7 +9,7 @@ import { randomUUID } from "crypto";
 
 export function setPreStream(
   router: Router,
-  config: Partial<HandlerConfig>,
+  _: Partial<HandlerConfig>,
   state: State
 ) {
   router.post("/api/streams", async (req, res) => {
@@ -28,60 +28,69 @@ export function setPreStream(
       return;
     }
     const magnetURI = createMagnetLink(hash, trackers, wsTrackers);
-    const streamer = new Streamer(magnetURI);
-    await streamer.download(
+    const id = randomUUID();
+    const fileDownload = await state.streamer.download(
+      id,
+      magnetURI,
       filePath,
-      state.cache.dirPath,
-      (torrent, file, err) => {
-        if (err) {
-          if (
-            err instanceof StreamerErr &&
-            err.code === StreamerErrCode.FILE_NOTFOUND
-          ) {
-            res.status(404).json({
-              err: "file not found in the torrent",
-            });
-            return;
-          }
-          console.log(err);
-          res.status(500).json({
-            err: "unknown error",
-          });
-          return;
-        }
-        if (file) {
-          const id = randomUUID();
-          state.openStreams.setStream(id, {
-            id: id,
-            hash: hash,
-            path: file.path,
-            name: torrent.name,
-            size: torrent.length,
-          });
-          console.clear();
-          console.table(state.openStreams.ipOpenStreamsTable());
-          const url = new URL(
-            "/api/streams/" + id,
-            `http://${req.hostname}:${req.socket.localPort}`
-          );
-          res.status(200).json({
-            name: torrent.name,
-            size: file.length,
-            path: file.path,
-            progress: file.progress,
-            streamUrl: url.href,
-          });
-          return;
-        }
-        res.sendStatus(200);
-      }
+      state.cache.dirPath
     );
+    fileDownload.on("progress", (progress) => {
+      state.openStreams.updateFile(id, {
+        progress,
+      });
+    });
+    fileDownload.on("error", (err) => {
+      console.log(err);
+      if (res.headersSent) return;
+      if (
+        err instanceof StreamerErr &&
+        err.code === StreamerErrCode.FILE_NOTFOUND
+      ) {
+        res.status(404).json({
+          err: "file not found in the torrent",
+        });
+        return;
+      }
+      res.status(500).json({
+        err: "unknown error",
+      });
+      return;
+    });
+    fileDownload.once("file", (torrent, file) => {
+      state.openStreams.setStream(id, {
+        id: id,
+        hash: hash,
+        path: file.path,
+        name: torrent.name,
+        size: torrent.length,
+        preStream: true,
+      });
+      console.clear();
+      console.table(state.openStreams.ipOpenStreamsTable());
+      const url = new URL(
+        "/api/streams/" + id,
+        `http://${req.hostname}:${req.socket.localPort}`
+      );
+      res.status(200).json({
+        name: torrent.name,
+        size: file.length,
+        path: file.path,
+        progress: file.progress,
+        streamUrl: url.href,
+      });
+    });
+    fileDownload.on("done", () => {
+      console.log("file download : " + fileDownload.file?.name);
+      state.openStreams.updateFile(id, { downloaded: true });
+      state.openStreams.removeStream(id, id);
+    });
   });
 }
 
 export function getPreStream(
   router: Router,
-  config: Partial<HandlerConfig>,
+  _: Partial<HandlerConfig>,
   state: State
 ) {
   router.get("/api/streams/:id", (req, res) => {
@@ -122,6 +131,45 @@ export function getPreStream(
       });
 
       fs.createReadStream(videoPath).pipe(res);
+    }
+  });
+}
+
+export function getPreStreams(
+  router: Router,
+  _: Partial<HandlerConfig>,
+  state: State
+) {
+  router.get("/api/streams/", (req, res) => {
+    const streams = state.openStreams.getFiles();
+    res.status(200).json(streams);
+  });
+}
+
+export function stopPreStream(
+  router: Router,
+  _: Partial<HandlerConfig>,
+  state: State
+) {
+  router.delete("/api/streams/:id", async (req, res) => {
+    try {
+      const id = req.params.id;
+      await state.streamer.stopDownload(id);
+      state.streamer.downloads.delete(id);
+      res.sendStatus(200);
+    } catch (err) {
+      if (
+        err instanceof StreamerErr &&
+        err.code === StreamerErrCode.DOWNLOAD_ID_NOTFOUND
+      ) {
+        res.status(404).json({
+          err: "stream not found",
+        });
+        return;
+      }
+      res.status(500).json({
+        err: "server error",
+      });
     }
   });
 }

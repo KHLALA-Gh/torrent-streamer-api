@@ -41,21 +41,26 @@ export function stream(
         return;
       }
       const range = req.headers.range;
-      const streamer = new Streamer(magnetURI);
-      await streamer.stream(res, decodeToUTF8(filePath64), range, (file) => {
-        state.openStreams.setStream(ip, {
-          id,
-          hash: magnetURI,
-          path: file.path,
-          name: file.name,
-          size: file.length,
-        });
-        console.clear();
-        console.table(state.openStreams.ipOpenStreamsTable());
-        return !res.headersSent;
-      });
+      const torrent = state.streamer.stream(
+        magnetURI,
+        res,
+        decodeToUTF8(filePath64),
+        range,
+        (file) => {
+          state.openStreams.setStream(ip, {
+            id,
+            hash: magnetURI,
+            path: file.path,
+            name: file.name,
+            size: file.length,
+          });
+          console.clear();
+          console.table(state.openStreams.ipOpenStreamsTable());
+          return !res.headersSent;
+        }
+      );
       res.on("close", () => {
-        streamer.destroy((err) => {
+        torrent.destroy({}, (err) => {
           state.openStreams.removeStream(ip, id);
           console.clear();
           console.table(state.openStreams.ipOpenStreamsTable());
@@ -111,24 +116,28 @@ export function experimental_streamMKV(
         return;
       }
 
-      let streamer = new Streamer(magnetURI);
-      streamer.experimental_streamMVK(res, decodeToUTF8(filePath64), (file) => {
-        state.openStreams.setStream(ip, {
-          id,
-          hash: magnetURI,
-          path: file.path,
-          name: file.name,
-          size: file.length,
-        });
-        console.clear();
-        console.table(state.openStreams.ipOpenStreamsTable());
-        return !res.headersSent;
-      });
+      const torrent = await state.streamer.experimental_streamMVK(
+        magnetURI,
+        res,
+        decodeToUTF8(filePath64),
+        (file) => {
+          state.openStreams.setStream(ip, {
+            id,
+            hash: magnetURI,
+            path: file.path,
+            name: file.name,
+            size: file.length,
+          });
+          console.clear();
+          console.table(state.openStreams.ipOpenStreamsTable());
+          return !res.headersSent;
+        }
+      );
       req.on("close", () => {
         state.openStreams.removeStream(ip, id);
         console.clear();
         console.table(state.openStreams.ipOpenStreamsTable());
-        streamer.destroy((err) => {
+        torrent.destroy({}, (err) => {
           if (err) {
             console.log("error when destroying the streamer : ", err);
             return;

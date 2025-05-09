@@ -3,12 +3,13 @@ import WebTorrent from "webtorrent";
 import Webtorrent from "webtorrent";
 import { StreamState } from "../types/config";
 import ffmpeg from "fluent-ffmpeg";
-import { Torrent } from "../types/search";
 import { Stream, TorrentFile, TorrentMetaData } from "../types/torrent";
+import EventEmitter from "events";
 export enum StreamerErrCode {
   "MP4FILE_NOTFOUND",
   "INVALID_PATH",
   "FILE_NOTFOUND",
+  "DOWNLOAD_ID_NOTFOUND",
 }
 
 export class StreamerErr extends Error {
@@ -32,21 +33,22 @@ export const contentType: { [T: string]: string } = {
 };
 
 export class Streamer extends Webtorrent {
-  magnetURI: string;
-  constructor(magnetURI: string) {
+  public downloads: Map<string, FileDownload>;
+  constructor() {
     super();
-    this.magnetURI = magnetURI;
+    this.downloads = new Map();
     this.on("error", (err) => {
       console.log(err);
     });
   }
   stream(
+    magnetURI: string,
     res: Response,
     filePath?: string,
     range?: string,
     callback?: (file: WebTorrent.TorrentFile) => boolean
   ) {
-    let torrent = this.add(this.magnetURI, (torrent) => {
+    let torrent = this.add(magnetURI, (torrent) => {
       if (filePath && !filePath.endsWith(".mp4")) {
         res.status(400).json({
           error: "the provided file is not an mp4 file.",
@@ -111,6 +113,7 @@ export class Streamer extends Webtorrent {
     return torrent;
   }
   async streamFile(
+    magnetURI: string,
     res: Response,
     path: string,
     range?: string,
@@ -122,7 +125,7 @@ export class Streamer extends Webtorrent {
         StreamerErrCode.INVALID_PATH
       );
     }
-    let torrent = this.add(this.magnetURI, (torrent) => {
+    let torrent = this.add(magnetURI, (torrent) => {
       const file = torrent.files.find((f) => f.path === path);
 
       if (!file) {
@@ -179,12 +182,13 @@ export class Streamer extends Webtorrent {
     return torrent;
   }
   async experimental_streamMVK(
+    magnetURI: string,
     res: Response,
     path?: string,
     callback?: (file: WebTorrent.TorrentFile) => boolean
   ) {
-    let torrent = this.add(this.magnetURI, (torrent) => {
-      console.log(this.magnetURI);
+    let torrent = this.add(magnetURI, (torrent) => {
+      console.log(magnetURI);
 
       const file = torrent.files.find(
         (f) => path === f?.path || (!path && f.name.endsWith(".mkv"))
@@ -218,20 +222,25 @@ export class Streamer extends Webtorrent {
     return torrent;
   }
   async download(
+    id: string,
+    magnetURI: string,
     filePath: string,
-    downloadPath: string,
-    callback?: (
-      torrent: WebTorrent.Torrent,
-      file?: WebTorrent.TorrentFile,
-      err?: Error
-    ) => void
-  ) {
-    this.add(this.magnetURI, { path: downloadPath }, (torrent) => {
+    downloadPath: string
+  ): Promise<FileDownload> {
+    const fileDownload = new FileDownload();
+    this.downloads.set(id, fileDownload);
+
+    let torrent = this.add(magnetURI, { path: downloadPath }, (torrent) => {
+      fileDownload.torrent = torrent;
+      fileDownload.emit("torrent", torrent);
+
       console.log(`Downloading: ${torrent.name}`);
 
       torrent.on("done", () => {
         console.log("Torrent download finished!");
         this.destroy();
+        fileDownload.emit("done");
+        fileDownload.removeAllListeners();
       });
       let found = false;
       torrent.files.forEach((file) => {
@@ -239,25 +248,72 @@ export class Streamer extends Webtorrent {
           file.deselect();
           return;
         }
-        if (typeof callback === "function") {
-          callback(torrent, file);
-        }
+        file.select();
         found = true;
         console.log(`Saving file: ${file.path}`);
+        setInterval(() => {
+          fileDownload.emit("progress", file.progress);
+        }, 5 * 1000);
+        fileDownload.file = file;
+        fileDownload.emit("file", torrent, file);
       });
-      if (!found && typeof callback === "function") {
-        callback(
-          torrent,
-          undefined,
+      if (!found) {
+        fileDownload.emit(
+          "error",
           new StreamerErr(
             `${filePath} is not found in the torrent with info hash : ${torrent.infoHash}`,
             StreamerErrCode.FILE_NOTFOUND
           )
         );
+        fileDownload.removeAllListeners();
+        torrent.destroy();
       }
+    });
+    torrent.on("error", (err) => {
+      if (typeof err === "string") {
+        fileDownload.emit("error", new Error(err));
+
+        return;
+      }
+      fileDownload.emit("error", err);
+    });
+    return fileDownload;
+  }
+  async stopDownload(id: string) {
+    let fileDownload = this.downloads.get(id);
+    if (!fileDownload) {
+      throw new StreamerErr(
+        "download not found",
+        StreamerErrCode.DOWNLOAD_ID_NOTFOUND
+      );
+    }
+    fileDownload.torrent?.destroy({}, (err) => {
+      if (err) {
+        console.log("error when destroying torrent : " + err.toString());
+        return;
+      }
+      console.log("torrent destroyed and download stopped");
     });
   }
 }
+
+interface FileDownloadEvents {
+  file: [torrent: Webtorrent.Torrent, file: WebTorrent.TorrentFile];
+  torrent: [torrent: Webtorrent.Torrent];
+  error: [err: Error];
+  progress: [progress: number];
+  done: [];
+}
+
+export class FileDownload extends EventEmitter<FileDownloadEvents> {
+  file?: WebTorrent.TorrentFile;
+  torrent?: WebTorrent.Torrent;
+  constructor(torrent?: WebTorrent.Torrent, file?: Webtorrent.TorrentFile) {
+    super();
+    this.file = file;
+  }
+}
+
 export class StreamsState {
   public openStreams: Map<string, StreamState[]>;
   protected files: Map<string, TorrentFile>;
@@ -302,11 +358,13 @@ export class StreamsState {
     });
   }
   ipOpenStreamsTable(): { ip: string; openStreams: number }[] {
-    let table: { ip: string; openStreams: number }[] = [];
+    let table: { ip: string; openStreams: number; prestream: boolean }[] = [];
     this.openStreams.forEach((v, k) => {
+      if (!v.length) return;
       table.push({
         ip: k,
         openStreams: v.length,
+        prestream: v[0].preStream || false,
       });
     });
     return table;
@@ -321,6 +379,16 @@ export class StreamsState {
   getFile(id: string): TorrentFile | undefined {
     return this.files.get(id);
   }
+  updateFile(id: string, change: Partial<TorrentFile>): boolean {
+    let file = this.files.get(id);
+    if (!file) return false;
+    file = {
+      ...file,
+      ...change,
+    };
+    this.files.set(id, file);
+    return true;
+  }
   getFileByPathAndHash(hash: string, path: string): TorrentFile | undefined {
     let files = this.files.values().toArray();
     let file: TorrentFile | undefined;
@@ -330,5 +398,8 @@ export class StreamsState {
       }
     }
     return file;
+  }
+  getFiles(): TorrentFile[] {
+    return this.files.values().toArray();
   }
 }

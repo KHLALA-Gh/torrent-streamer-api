@@ -35,26 +35,31 @@ export function downloadFile(
           res.json({ error: "Request timeout" });
         }
       }, config?.torrentFilesTimeout || 10 * 1000);
-      let streamer = new Streamer(magnetURI);
-      streamer.streamFile(res, path, range, (file) => {
-        state.openStreams.setStream(ip, {
-          id,
-          hash: hash,
-          path: file.path,
-          name: file.name,
-          size: file.length,
-        });
-        console.clear();
-        console.table(state.openStreams.ipOpenStreamsTable());
-        clearTimeout(to);
-        return !res.headersSent;
-      });
+      let torrent = await state.streamer.streamFile(
+        magnetURI,
+        res,
+        path,
+        range,
+        (file) => {
+          state.openStreams.setStream(ip, {
+            id,
+            hash: hash,
+            path: file.path,
+            name: file.name,
+            size: file.length,
+          });
+          console.clear();
+          console.table(state.openStreams.ipOpenStreamsTable());
+          clearTimeout(to);
+          return !res.headersSent;
+        }
+      );
       res.on("close", () => {
         state.openStreams.removeStream(ip, id);
         console.clear();
         console.table(state.openStreams.ipOpenStreamsTable());
         clearTimeout(to);
-        streamer.destroy((err) => {
+        torrent.destroy({}, (err) => {
           if (err) {
             console.log("error while destroying streamer : " + err.toString());
             return;
