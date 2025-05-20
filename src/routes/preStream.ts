@@ -1,11 +1,17 @@
 import { Router } from "express";
 import { HandlerConfig, State } from "../types/config.js";
-import { Streamer, StreamerErr, StreamerErrCode } from "../lib/streamer.js";
+import {
+  contentType,
+  Streamer,
+  StreamerErr,
+  StreamerErrCode,
+} from "../lib/streamer.js";
 import { createMagnetLink } from "./magnet.js";
 import { trackers, wsTrackers } from "../trackers.js";
 import path from "path";
 import fs from "fs";
 import { randomUUID } from "crypto";
+import { nanoid } from "nanoid";
 
 export function setPreStream(
   router: Router,
@@ -15,14 +21,14 @@ export function setPreStream(
   router.post("/api/streams", async (req, res) => {
     let hash = req.body.hash;
     let filePath = req.body.filePath;
-    const file = state.openStreams.getFileByPathAndHash(hash, filePath);
-    if (file) {
+    const download = state.streamer.getDownloadByPathAndHash(hash, filePath);
+    if (download) {
       const url = new URL(
-        "/api/streams/" + file.id,
+        "/api/streams/" + download.id,
         `http://${req.hostname}:${req.socket.localPort}`
       );
       res.status(200).json({
-        ...file,
+        ...download.getFile(),
         streamUrl: url.href,
       });
       return;
@@ -35,11 +41,6 @@ export function setPreStream(
       filePath,
       state.cache.dirPath
     );
-    fileDownload.on("progress", (progress) => {
-      state.openStreams.updateFile(id, {
-        progress,
-      });
-    });
     fileDownload.on("error", (err) => {
       console.log(err);
       if (res.headersSent) return;
@@ -58,32 +59,18 @@ export function setPreStream(
       return;
     });
     fileDownload.once("file", (torrent, file) => {
-      state.openStreams.setStream(id, {
-        id: id,
-        hash: hash,
-        path: file.path,
-        name: torrent.name,
-        size: torrent.length,
-        preStream: true,
-      });
-      console.clear();
-      console.table(state.openStreams.ipOpenStreamsTable());
       const url = new URL(
         "/api/streams/" + id,
         `http://${req.hostname}:${req.socket.localPort}`
       );
+      fileDownload.streamUrl = url.href;
       res.status(200).json({
-        name: torrent.name,
-        size: file.length,
-        path: file.path,
-        progress: file.progress,
+        ...fileDownload.getFile(),
         streamUrl: url.href,
       });
     });
     fileDownload.on("done", () => {
-      console.log("file download : " + fileDownload.file?.name);
-      state.openStreams.updateFile(id, { downloaded: true });
-      state.openStreams.removeStream(id, id);
+      console.log("file downloaded : " + fileDownload.file?.name);
     });
   });
 }
@@ -93,44 +80,39 @@ export function getPreStream(
   _: Partial<HandlerConfig>,
   state: State
 ) {
-  router.get("/api/streams/:id", (req, res) => {
-    const id = req.params.id;
-
-    const file = state.openStreams.getFile(id);
-    if (!file) {
-      res.status(404).json({
-        err: "stream not found",
-      });
-      return;
-    }
-    const videoPath = path.resolve(state.cache.dirPath, file.path);
-    const stat = fs.statSync(videoPath);
-    const fileSize = stat.size;
-    const range = req.headers.range;
-
-    if (range) {
-      const [startStr, endStr] = range.replace(/bytes=/, "").split("-");
-      const start = parseInt(startStr, 10);
-      const end = endStr ? parseInt(endStr, 10) : fileSize - 1;
-      const chunkSize = end - start + 1;
-
-      const stream = fs.createReadStream(videoPath, { start, end });
-
-      res.writeHead(206, {
-        "Content-Range": `bytes ${start}-${end}/${fileSize}`,
-        "Accept-Ranges": "bytes",
-        "Content-Length": chunkSize,
-        "Content-Type": "video/mp4",
+  router.get("/api/streams/:id", (req, res): any => {
+    try {
+      const id = req.params.id;
+      const range = req.headers.range;
+      let stream = state.streamer.streamDownlaod(id, res, range);
+      let streamID = nanoid();
+      let ip = req.ip || "";
+      if (ip === "::1") {
+        ip = "127.0.0.1";
+      }
+      state.openStreams.setStreamAndLog(streamID, {
+        infoHash: state.streamer.downloads.get(id)?.torrent?.infoHash || "",
+        ip,
       });
 
-      stream.pipe(res);
-    } else {
-      res.writeHead(200, {
-        "Content-Length": fileSize,
-        "Content-Type": "video/mp4",
+      req.on("close", () => {
+        //@ts-ignore
+        stream.destroy((err) => {
+          if (err) {
+            console.log("error when closing stream : ", err);
+            return;
+          }
+          state.openStreams.removeStreamAndLog(id);
+          console.log("stream destroyed");
+        });
       });
-
-      fs.createReadStream(videoPath).pipe(res);
+      stream.on("close", () => {
+        console.log("stream closed");
+      });
+    } catch (err) {
+      if (err instanceof StreamerErr) {
+        console.log(err.error());
+      }
     }
   });
 }
@@ -141,8 +123,8 @@ export function getPreStreams(
   state: State
 ) {
   router.get("/api/streams/", (req, res) => {
-    const streams = state.openStreams.getFiles();
-    res.status(200).json(streams);
+    const files = state.streamer.getDownloads();
+    res.status(200).json(files);
   });
 }
 
@@ -156,6 +138,9 @@ export function stopPreStream(
       const id = req.params.id;
       await state.streamer.stopDownload(id);
       state.streamer.downloads.delete(id);
+      state.openStreams.removeStream(id);
+      console.clear();
+      console.table(state.openStreams.ipOpenStreamsTable());
       res.sendStatus(200);
     } catch (err) {
       if (

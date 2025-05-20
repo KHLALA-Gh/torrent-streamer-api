@@ -1,11 +1,9 @@
 import { Router } from "express";
 import { HandlerConfig, State } from "../types/config.js";
-import { Streamer, StreamerErr, StreamerErrCode } from "../lib/streamer.js";
-import { createMagnetLink } from "./magnet.js";
-import { trackers, wsTrackers } from "../trackers.js";
+import { StreamerErr, StreamerErrCode } from "../lib/streamer.js";
 import { decodeToUTF8 } from "../lib/encoder.js";
 import { randomUUID } from "crypto";
-
+import { nanoid } from "nanoid";
 export function downloadFile(
   router: Router,
   config: Partial<HandlerConfig>,
@@ -18,56 +16,68 @@ export function downloadFile(
         ip = "127.0.0.1";
       }
       let limit = config?.ipStreamLimit || 10;
-      if (state?.openStreams.getStreamCount(ip) >= limit) {
+      if (state?.openStreams.getIpStreamCount(ip) >= limit) {
         res.status(403).json({
           error: "you reached your stream limit",
         });
         return;
       }
-      let id = randomUUID();
 
       const path = decodeToUTF8(req.params.path);
       const hash = req.params.hash;
-      const magnetURI = createMagnetLink(hash, trackers, wsTrackers);
       const range = req.headers.range;
       let to = setTimeout(() => {
         if (!res.headersSent) {
           res.json({ error: "Request timeout" });
         }
       }, config?.torrentFilesTimeout || 10 * 1000);
-      let torrent = await state.streamer.streamFile(
-        magnetURI,
+
+      state.streamer.streamFile(
+        hash,
         res,
         path,
         range,
-        (file) => {
-          state.openStreams.setStream(ip, {
-            id,
-            hash: hash,
-            path: file.path,
-            name: file.name,
-            size: file.length,
-          });
-          console.clear();
-          console.table(state.openStreams.ipOpenStreamsTable());
+        (fileDownload, stream) => {
           clearTimeout(to);
+
+          console.log("stream started file : " + fileDownload.file?.name);
+          let streamID = nanoid();
+          state.openStreams.setStreamAndLog(streamID, {
+            ip,
+            preStream: false,
+            infoHash: hash,
+          });
+          stream.on("error", (err) => {
+            //@ts-ignore
+            stream.destroy();
+          });
+          res.on("close", () => {
+            state.openStreams.removeStreamAndLog(streamID);
+            clearTimeout(to);
+            //@ts-ignore
+            stream.destroy();
+            if (!state.openStreams.getIpStreamCount(ip)) {
+              let destroyTorrentTimeout = setTimeout(() => {
+                fileDownload.torrent?.destroy();
+                state.streamer.downloads.delete(fileDownload.id);
+                console.log("torrent destroyed");
+              }, 5 * 1000);
+              fileDownload.on("stream", () => {
+                clearTimeout(destroyTorrentTimeout);
+              });
+            }
+          });
+          req.on("close", () => {
+            console.log("request closed");
+          });
+          stream.on("close", () => {
+            console.log(`stream closed "${fileDownload.file?.name}"`);
+          });
           return !res.headersSent;
         }
       );
-      res.on("close", () => {
-        state.openStreams.removeStream(ip, id);
-        console.clear();
-        console.table(state.openStreams.ipOpenStreamsTable());
-        clearTimeout(to);
-        torrent.destroy({}, (err) => {
-          if (err) {
-            console.log("error while destroying streamer : " + err.toString());
-            return;
-          }
-          console.log("response closed : streamer destroyed");
-        });
-      });
     } catch (err) {
+      console.log(err);
       if (err instanceof StreamerErr) {
         if (err.code === StreamerErrCode.INVALID_PATH) {
           res.status(400).json({ error: "Invalid file path" });

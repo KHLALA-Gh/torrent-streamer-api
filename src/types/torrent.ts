@@ -17,6 +17,7 @@ export interface TorrentFile {
   torrentHash: string;
   progress?: number;
   downloaded?: boolean;
+  streamUrl?: string;
 }
 
 export interface Stream {

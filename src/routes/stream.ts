@@ -1,8 +1,8 @@
 import { Router } from "express";
 import { HandlerConfig, State } from "../types/config";
-import { Streamer } from "../lib/streamer.js";
 import { decodeToUTF8 } from "../lib/encoder.js";
 import { randomUUID } from "crypto";
+import { nanoid } from "nanoid";
 
 export function stream(
   router: Router,
@@ -22,13 +22,13 @@ export function stream(
         ip = "127.0.0.1";
       }
       let limit = config?.ipStreamLimit || 10;
-      if (state?.openStreams.getStreamCount(ip) >= limit) {
+      if (state?.openStreams.getIpStreamCount(ip) >= limit) {
         res.status(403).json({
           error: "you reached your stream limit",
         });
         return;
       }
-      let id = randomUUID();
+      let id = nanoid();
       const magnetURI = req.query.magnet;
       let filePath64 = req.query.path64;
       if (typeof filePath64 !== "string") {
@@ -47,12 +47,9 @@ export function stream(
         decodeToUTF8(filePath64),
         range,
         (file) => {
-          state.openStreams.setStream(ip, {
-            id,
-            hash: magnetURI,
-            path: file.path,
-            name: file.name,
-            size: file.length,
+          state.openStreams.setStream(id, {
+            ip,
+            infoHash: magnetURI,
           });
           console.clear();
           console.table(state.openStreams.ipOpenStreamsTable());
@@ -61,7 +58,7 @@ export function stream(
       );
       res.on("close", () => {
         torrent.destroy({}, (err) => {
-          state.openStreams.removeStream(ip, id);
+          state.openStreams.removeStream(id);
           console.clear();
           console.table(state.openStreams.ipOpenStreamsTable());
           if (err) {
@@ -97,13 +94,13 @@ export function experimental_streamMKV(
         ip = "127.0.0.1";
       }
       let limit = config?.ipStreamLimit || 10;
-      if (state?.openStreams.getStreamCount(ip) >= limit) {
+      if (state?.openStreams.getIpStreamCount(ip) >= limit) {
         res.status(403).json({
           error: "you reached your stream limit",
         });
         return;
       }
-      let id = randomUUID();
+      let id = nanoid();
       const magnetURI = req.query.magnet;
       let filePath64 = req.query.path64;
       if (typeof filePath64 !== "string") {
@@ -116,17 +113,14 @@ export function experimental_streamMKV(
         return;
       }
 
-      const torrent = await state.streamer.experimental_streamMVK(
+      const torrent = await state.streamer.experimental_streamMKV(
         magnetURI,
         res,
         decodeToUTF8(filePath64),
         (file) => {
-          state.openStreams.setStream(ip, {
-            id,
-            hash: magnetURI,
-            path: file.path,
-            name: file.name,
-            size: file.length,
+          state.openStreams.setStream(id, {
+            ip,
+            infoHash: magnetURI,
           });
           console.clear();
           console.table(state.openStreams.ipOpenStreamsTable());
@@ -134,7 +128,7 @@ export function experimental_streamMKV(
         }
       );
       req.on("close", () => {
-        state.openStreams.removeStream(ip, id);
+        state.openStreams.removeStream(id);
         console.clear();
         console.table(state.openStreams.ipOpenStreamsTable());
         torrent.destroy({}, (err) => {

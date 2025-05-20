@@ -42,7 +42,7 @@ export interface HandlerConfig {
 }
 
 export interface StreamState {
-  id: string;
+  ip: string;
   infoHash: string;
   preStream?: boolean;
 }

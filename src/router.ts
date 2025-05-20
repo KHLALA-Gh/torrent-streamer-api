@@ -42,5 +42,6 @@ export function TorrentStreamerApi(config?: Partial<HandlerConfig>) {
   getPreStream(router, config, state);
   getPreStreams(router, config, state);
   stopPreStream(router, config, state);
+
   return router;
 }
