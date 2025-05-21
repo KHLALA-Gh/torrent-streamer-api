@@ -19,7 +19,7 @@ import {
  * @returns Express Router
  */
 export function TorrentStreamerApi(config?: Partial<HandlerConfig>) {
-  config = { ...defaultConf, ...config };
+  let c = { ...defaultConf, ...config };
 
   const router = Router();
   const streamer = new Streamer();
@@ -30,18 +30,18 @@ export function TorrentStreamerApi(config?: Partial<HandlerConfig>) {
     },
     streamer,
   };
-  stream(router, config, state);
-  getMagnet(router, config);
-  search(router, config);
-  getFiles(router, config);
-  downloadFile(router, config, state);
-  if (config.enableExperimentalMKVStream) {
-    experimental_streamMKV(router, config, state);
+  stream(router, c, state);
+  getMagnet(router, c);
+  search(router, c);
+  getFiles(router, c);
+  downloadFile(router, c, state);
+  if (c.enableExperimentalMKVStream) {
+    experimental_streamMKV(router, c, state);
   }
-  setPreStream(router, config, state);
-  getPreStream(router, config, state);
-  getPreStreams(router, config, state);
-  stopPreStream(router, config, state);
+  setPreStream(router, c, state);
+  getPreStream(router, c, state);
+  getPreStreams(router, c, state);
+  stopPreStream(router, c, state);
 
   return router;
 }

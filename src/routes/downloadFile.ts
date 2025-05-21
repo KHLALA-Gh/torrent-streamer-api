@@ -6,7 +6,7 @@ import { randomUUID } from "crypto";
 import { nanoid } from "nanoid";
 export function downloadFile(
   router: Router,
-  config: Partial<HandlerConfig>,
+  config: HandlerConfig,
   state: State
 ) {
   router.get("/api/torrents/:hash/files/:path", async (req, res) => {
@@ -31,51 +31,39 @@ export function downloadFile(
           res.json({ error: "Request timeout" });
         }
       }, config?.torrentFilesTimeout || 10 * 1000);
+      let streamID = nanoid();
 
-      state.streamer.streamFile(
+      let fileDownload = state.streamer.streamFile(
         hash,
         res,
         path,
-        range,
-        (fileDownload, stream) => {
-          clearTimeout(to);
-
-          console.log("stream started file : " + fileDownload.file?.name);
-          let streamID = nanoid();
-          state.openStreams.setStreamAndLog(streamID, {
-            ip,
-            preStream: false,
-            infoHash: hash,
-          });
-          stream.on("error", (err) => {
-            //@ts-ignore
-            stream.destroy();
-          });
-          res.on("close", () => {
-            state.openStreams.removeStreamAndLog(streamID);
-            clearTimeout(to);
-            //@ts-ignore
-            stream.destroy();
-            if (!state.openStreams.getIpStreamCount(ip)) {
-              let destroyTorrentTimeout = setTimeout(() => {
-                fileDownload.torrent?.destroy();
-                state.streamer.downloads.delete(fileDownload.id);
-                console.log("torrent destroyed");
-              }, 5 * 1000);
-              fileDownload.on("stream", () => {
-                clearTimeout(destroyTorrentTimeout);
-              });
-            }
-          });
-          req.on("close", () => {
-            console.log("request closed");
-          });
-          stream.on("close", () => {
-            console.log(`stream closed "${fileDownload.file?.name}"`);
-          });
-          return !res.headersSent;
-        }
+        (fileDownload) => {
+          console.log(streamID);
+          state.openStreams.removeStreamAndLog(streamID);
+          if (!state.openStreams.getIpStreamCount(ip)) {
+            fileDownload.softDestroy(config.destroyTorrentTimeout, () => {
+              state.streamer.downloads.delete(fileDownload.id);
+            });
+          }
+        },
+        range
       );
+      clearTimeout(to);
+      if (!fileDownload) return;
+      console.log("stream started file : " + fileDownload.file?.name);
+      state.openStreams.setStreamAndLog(streamID, {
+        ip,
+        preStream: false,
+        infoHash: hash,
+      });
+      res.on("close", () => {
+        state.openStreams.removeStreamAndLog(streamID);
+        if (!state.openStreams.getIpStreamCount(ip)) {
+          fileDownload.softDestroy(config.destroyTorrentTimeout, () => {
+            state.streamer.downloads.delete(fileDownload.id);
+          });
+        }
+      });
     } catch (err) {
       console.log(err);
       if (err instanceof StreamerErr) {

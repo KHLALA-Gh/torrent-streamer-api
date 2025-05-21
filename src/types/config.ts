@@ -39,6 +39,11 @@ export interface HandlerConfig {
    */
   chooseSearchLimit: boolean;
   enableExperimentalMKVStream: boolean;
+  /**
+   * The duration to wait before destroying the torrent if there is no streams piping.
+   * @note : Duration in milliseconds (ms).
+   */
+  destroyTorrentTimeout: number;
 }
 
 export interface StreamState {
@@ -67,4 +72,5 @@ export const defaultConf: HandlerConfig = {
   maxSearchLimit: 100,
   chooseSearchLimit: true,
   enableExperimentalMKVStream: false,
+  destroyTorrentTimeout: 60 * 1000,
 };

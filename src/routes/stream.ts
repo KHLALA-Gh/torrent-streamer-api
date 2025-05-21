@@ -4,19 +4,9 @@ import { decodeToUTF8 } from "../lib/encoder.js";
 import { randomUUID } from "crypto";
 import { nanoid } from "nanoid";
 
-export function stream(
-  router: Router,
-  config: Partial<HandlerConfig>,
-  state: State
-) {
+export function stream(router: Router, config: HandlerConfig, state: State) {
   router.get("/api/stream", async (req, res) => {
     try {
-      if (!req.query.magnet || typeof req.query.magnet != "string") {
-        res.status(400).json({
-          err: "magnet query value is required",
-        });
-        return;
-      }
       let ip = req.ip || "";
       if (ip === "::1") {
         ip = "127.0.0.1";
@@ -29,44 +19,47 @@ export function stream(
         return;
       }
       let id = nanoid();
-      const magnetURI = req.query.magnet;
+      const hash = req.query.hash;
       let filePath64 = req.query.path64;
       if (typeof filePath64 !== "string") {
         filePath64 = "";
       }
-      if (typeof magnetURI !== "string" || !magnetURI) {
+      if (typeof hash !== "string" || !hash) {
         res.status(400).json({
-          error: "magnetURI is required",
+          error: "hash is required",
         });
         return;
       }
       const range = req.headers.range;
-      const torrent = state.streamer.stream(
-        magnetURI,
+      const fileDownload = state.streamer.streamFile(
+        hash,
         res,
-        decodeToUTF8(filePath64),
-        range,
         (file) => {
-          state.openStreams.setStream(id, {
-            ip,
-            infoHash: magnetURI,
-          });
-          console.clear();
-          console.table(state.openStreams.ipOpenStreamsTable());
-          return !res.headersSent;
-        }
-      );
-      res.on("close", () => {
-        torrent.destroy({}, (err) => {
+          if (file.name.endsWith(".mp4")) return true;
+          return false;
+        },
+        (fileDownload) => {
           state.openStreams.removeStream(id);
-          console.clear();
-          console.table(state.openStreams.ipOpenStreamsTable());
-          if (err) {
-            console.log("error while destroying streamer : " + err.toString());
-            return;
+          if (!state.openStreams.getIpStreamCount(ip)) {
+            fileDownload.softDestroy(config.destroyTorrentTimeout, () => {
+              state.streamer.downloads.delete(fileDownload.id);
+            });
           }
-          console.log("response closed : streamer destroyed");
-        });
+        },
+        range
+      );
+      if (!fileDownload) return;
+      state.openStreams.setStream(id, {
+        ip,
+        infoHash: hash,
+      });
+      res.on("close", () => {
+        state.openStreams.removeStream(id);
+        if (!state.openStreams.getIpStreamCount(ip)) {
+          fileDownload.softDestroy(config.destroyTorrentTimeout, () => {
+            state.streamer.downloads.delete(fileDownload.id);
+          });
+        }
       });
     } catch (err) {
       res.status(500).json({
