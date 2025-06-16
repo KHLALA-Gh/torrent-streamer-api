@@ -45,6 +45,7 @@ export class Streamer extends Webtorrent {
       console.log(err);
     });
   }
+  /**@deprecated */
   stream(
     magnetURI: string,
     res: Response,
