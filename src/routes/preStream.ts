@@ -1,15 +1,8 @@
 import { Router } from "express";
 import { HandlerConfig, State } from "../types/config.js";
-import {
-  contentType,
-  Streamer,
-  StreamerErr,
-  StreamerErrCode,
-} from "../lib/streamer.js";
+import { StreamerErr, StreamerErrCode } from "../lib/streamer.js";
 import { createMagnetLink } from "./magnet.js";
 import { trackers, wsTrackers } from "../trackers.js";
-import path from "path";
-import fs from "fs";
 import { randomUUID } from "crypto";
 import { nanoid } from "nanoid";
 
@@ -33,45 +26,24 @@ export function setPreStream(
       });
       return;
     }
-    const magnetURI = createMagnetLink(hash, trackers, wsTrackers);
     const id = randomUUID();
-    const fileDownload = await state.streamer.download(
+    state.streamer.download(
       id,
-      magnetURI,
+      hash,
       filePath,
-      state.cache.dirPath
-    );
-    fileDownload.on("error", (err) => {
-      console.log(err);
-      if (res.headersSent) return;
-      if (
-        err instanceof StreamerErr &&
-        err.code === StreamerErrCode.FILE_NOTFOUND
-      ) {
-        res.status(404).json({
-          err: "file not found in the torrent",
+      state.cache.dirPath,
+      (fileDownload) => {
+        const url = new URL(
+          "/api/streams/" + id,
+          `http://${req.hostname}:${req.socket.localPort}`
+        );
+        fileDownload.streamUrl = url.href;
+        res.status(200).json({
+          ...fileDownload.getFile(),
+          streamUrl: url.href,
         });
-        return;
       }
-      res.status(500).json({
-        err: "unknown error",
-      });
-      return;
-    });
-    fileDownload.once("file", (torrent, file) => {
-      const url = new URL(
-        "/api/streams/" + id,
-        `http://${req.hostname}:${req.socket.localPort}`
-      );
-      fileDownload.streamUrl = url.href;
-      res.status(200).json({
-        ...fileDownload.getFile(),
-        streamUrl: url.href,
-      });
-    });
-    fileDownload.on("done", () => {
-      console.log("file downloaded : " + fileDownload.file?.name);
-    });
+    );
   });
 }
 
@@ -95,18 +67,19 @@ export function getPreStream(
         ip,
       });
 
-      req.on("close", () => {
+      res.on("close", () => {
         //@ts-ignore
         stream.destroy((err) => {
           if (err) {
             console.log("error when closing stream : ", err);
             return;
           }
-          state.openStreams.removeStreamAndLog(id);
+          state.openStreams.removeStreamAndLog(streamID);
           console.log("stream destroyed");
         });
       });
       stream.on("close", () => {
+        state.openStreams.removeStreamAndLog(streamID);
         console.log("stream closed");
       });
     } catch (err) {
@@ -139,6 +112,7 @@ export function stopPreStream(
       await state.streamer.stopDownload(id);
       state.streamer.downloads.delete(id);
       state.openStreams.removeStream(id);
+
       console.clear();
       console.table(state.openStreams.ipOpenStreamsTable());
       res.sendStatus(200);

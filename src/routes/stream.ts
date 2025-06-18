@@ -1,7 +1,6 @@
 import { Router } from "express";
 import { HandlerConfig, State } from "../types/config";
 import { decodeToUTF8 } from "../lib/encoder.js";
-import { randomUUID } from "crypto";
 import { nanoid } from "nanoid";
 
 export function stream(router: Router, config: HandlerConfig, state: State) {
@@ -31,7 +30,7 @@ export function stream(router: Router, config: HandlerConfig, state: State) {
         return;
       }
       const range = req.headers.range;
-      const fileDownload = state.streamer.streamFile(
+      const fileDownload = await state.streamer.streamFile(
         hash,
         res,
         (file) => {
@@ -71,7 +70,7 @@ export function stream(router: Router, config: HandlerConfig, state: State) {
 
 export function experimental_streamMKV(
   router: Router,
-  config: Partial<HandlerConfig>,
+  config: HandlerConfig,
   state: State
 ) {
   router.get("/api/exp-stream-mkv", async (req, res) => {
@@ -106,14 +105,14 @@ export function experimental_streamMKV(
         return;
       }
 
-      const torrent = await state.streamer.experimental_streamMKV(
+      const fileDownload = await state.streamer.experimental_streamMKV(
         magnetURI,
         res,
         decodeToUTF8(filePath64),
         (file) => {
           state.openStreams.setStream(id, {
             ip,
-            infoHash: magnetURI,
+            infoHash: file.torrent?.infoHash || "",
           });
           console.clear();
           console.table(state.openStreams.ipOpenStreamsTable());
@@ -124,12 +123,8 @@ export function experimental_streamMKV(
         state.openStreams.removeStream(id);
         console.clear();
         console.table(state.openStreams.ipOpenStreamsTable());
-        torrent.destroy({}, (err) => {
-          if (err) {
-            console.log("error when destroying the streamer : ", err);
-            return;
-          }
-          console.log("request closed streamer destroyed");
+        fileDownload?.softDestroy(config.destroyTorrentTimeout, () => {
+          console.log("experimental_stream_mkv : torrent destroyed");
         });
       });
     } catch (err) {

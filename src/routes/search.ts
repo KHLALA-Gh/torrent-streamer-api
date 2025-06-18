@@ -1,7 +1,6 @@
 import { Router } from "express";
 import { HandlerConfig } from "../types/config.js";
 import TorrentAgent from "torrent-agent";
-import { Scraper1337x } from "torrent-agent";
 
 export function search(router: Router, config: Partial<HandlerConfig>) {
   const agent = new TorrentAgent({

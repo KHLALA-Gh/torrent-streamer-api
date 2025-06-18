@@ -2,7 +2,6 @@ import { Router } from "express";
 import { HandlerConfig, State } from "../types/config.js";
 import { StreamerErr, StreamerErrCode } from "../lib/streamer.js";
 import { decodeToUTF8 } from "../lib/encoder.js";
-import { randomUUID } from "crypto";
 import { nanoid } from "nanoid";
 export function downloadFile(
   router: Router,
@@ -32,13 +31,11 @@ export function downloadFile(
         }
       }, config?.torrentFilesTimeout || 10 * 1000);
       let streamID = nanoid();
-
-      let fileDownload = state.streamer.streamFile(
+      let fileDownload = await state.streamer.streamFile(
         hash,
         res,
         path,
         (fileDownload) => {
-          console.log(streamID);
           state.openStreams.removeStreamAndLog(streamID);
           if (!state.openStreams.getIpStreamCount(ip)) {
             fileDownload.softDestroy(config.destroyTorrentTimeout, () => {
@@ -55,14 +52,6 @@ export function downloadFile(
         ip,
         preStream: false,
         infoHash: hash,
-      });
-      res.on("close", () => {
-        state.openStreams.removeStreamAndLog(streamID);
-        if (!state.openStreams.getIpStreamCount(ip)) {
-          fileDownload.softDestroy(config.destroyTorrentTimeout, () => {
-            state.streamer.downloads.delete(fileDownload.id);
-          });
-        }
       });
     } catch (err) {
       console.log(err);

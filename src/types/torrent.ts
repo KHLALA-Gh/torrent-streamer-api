@@ -1,4 +1,4 @@
-export interface TorrentMetaData {
+export interface TorrentFileMetaData {
   name: string;
   path: string;
   size: number;

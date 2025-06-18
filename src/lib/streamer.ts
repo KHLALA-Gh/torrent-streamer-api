@@ -3,7 +3,7 @@ import WebTorrent from "webtorrent";
 import Webtorrent from "webtorrent";
 import { StreamState } from "../types/config.js";
 import ffmpeg from "fluent-ffmpeg";
-import { Stream, TorrentFile } from "../types/torrent.js";
+import { TorrentFile } from "../types/torrent.js";
 import EventEmitter from "events";
 import { createMagnetLink } from "../routes/magnet.js";
 import { trackers, wsTrackers } from "../trackers.js";
@@ -44,6 +44,40 @@ export class Streamer extends Webtorrent {
     this.on("error", (err) => {
       console.log(err);
     });
+  }
+  async getTorrent(
+    hash: string,
+    opts?: WebTorrent.TorrentOptions
+  ): Promise<WebTorrent.Torrent> {
+    let torrent: WebTorrent.Torrent | undefined;
+    this.torrents.find((t) => {
+      if (t.infoHash.toLocaleLowerCase() === hash.toLocaleLowerCase()) {
+        torrent = t;
+      }
+    });
+    if (torrent && !torrent.name) {
+      torrent = await new Promise<WebTorrent.Torrent>((res, rej) => {
+        if (!torrent) return rej("torrent is undefined");
+        torrent.once("ready", () => {
+          if (!torrent) return rej();
+
+          res(torrent);
+        });
+        torrent.once("error", (err) => rej(err));
+      });
+    }
+    if (torrent && torrent.name) return torrent;
+    torrent = await new Promise<WebTorrent.Torrent>((res, rej) => {
+      torrent = this.add(createMagnetLink(hash, trackers, wsTrackers), opts);
+      torrent.once("ready", () => {
+        if (!torrent) return rej();
+
+        res(torrent);
+      });
+      torrent.once("error", (err) => rej(err));
+    });
+
+    return torrent;
   }
   /**@deprecated */
   stream(
@@ -117,208 +151,152 @@ export class Streamer extends Webtorrent {
     });
     return torrent;
   }
-  streamFile(
+  async streamFile(
     hash: string,
     res: Response,
     path: string | ((file: WebTorrent.TorrentFile) => boolean),
     cleanup: (download: FileDownload) => void,
     range?: string
-  ): FileDownload | undefined {
+  ): Promise<FileDownload | undefined> {
     if (!path) {
       throw new StreamerErr(
         `${path} path is invalid`,
         StreamerErrCode.INVALID_PATH
       );
     }
-    let torrent = this.getTorrentFromDownloads(hash);
-    if (torrent) {
-      let file: WebTorrent.TorrentFile | undefined;
+    let torrent = await this.getTorrent(hash);
 
-      torrent.files.forEach((f) => {
-        if (typeof path === "string") {
-          if (f.path === path) {
-            file = f;
-            return;
-          }
-        } else {
-          if (path(f)) {
-            file = f;
-            return;
-          }
+    let file: WebTorrent.TorrentFile | undefined;
+
+    torrent.files.forEach((f) => {
+      if (typeof path === "string") {
+        if (f.path === path) {
+          file = f;
+          return;
         }
-      });
-      if (!file) {
-        console.log(`file not found for info hash : ${torrent.infoHash}`);
-        res.status(404).json({
-          error: "file not found for info hash : " + torrent.infoHash,
-        });
-        return;
-      }
-      let fileDownload = this.getDownloadByPathAndHash(hash, file.path);
-      if (!fileDownload) {
-        fileDownload = new FileDownload(randomUUID(), torrent, file);
-        this.downloads.set(fileDownload.id, fileDownload);
-        fileDownload.file?.select();
-      }
-      console.log("found : " + fileDownload.file?.name);
-      if (res.headersSent) throw new Error("response already sent");
-      let metadata = fileDownload.getStreamMetaData(range);
-      res.writeHead(range ? 206 : 200, {
-        "Content-Range": `bytes ${metadata.start}-${metadata.end}/${fileDownload.file?.length}`,
-        "Accept-Ranges": "bytes",
-        "Content-Length": metadata.chunkSize,
-        "Content-Type": metadata.contentType,
-        "Content-Disposition": `attachment; filename="${fileDownload.file?.name}"`,
-      });
-      fileDownload.stream(res, cleanup, range);
-
-      return fileDownload;
-    }
-    let fileDownload: FileDownload | undefined;
-    this.add(createMagnetLink(hash, trackers, wsTrackers), (torrent) => {
-      let file: WebTorrent.TorrentFile | undefined;
-
-      torrent.files.forEach((f) => {
-        if (typeof path === "string") {
-          if (f.path === path) {
-            f.select();
-            file = f;
-            return;
-          }
-        } else {
-          if (path(f)) {
-            f.select();
-            file = f;
-            return;
-          }
-        }
-        f.deselect();
-      });
-
-      if (!file) {
-        console.log(`file not found for info hash : ${torrent.infoHash}`);
-        res.status(404).json({
-          error: "file not found for info hash : " + torrent.infoHash,
-        });
-        return;
-      }
-      fileDownload = new FileDownload(randomUUID(), torrent, file);
-      this.downloads.set(fileDownload.id, fileDownload);
-      let fileExt = file.name.split(".").pop() || "";
-      let contentTypeValue = contentType[fileExt] || "application/octet-stream";
-      if (!range) {
-        if (res.headersSent) throw new Error("response already sent");
-        res.writeHead(200, {
-          "Content-Length": file.length,
-          "Content-Type": contentTypeValue,
-          "Content-Disposition": `attachment; filename="${file.name}"`,
-        });
-        fileDownload.stream(res, cleanup);
       } else {
-        const positions = range.replace(/bytes=/, "").split("-");
-        const start = parseInt(positions[0], 10);
-        const end = positions[1] ? parseInt(positions[1], 10) : file.length - 1;
-
-        const chunkSize = end - start + 1;
-        if (res.headersSent) throw new Error("response already sent");
-        res.writeHead(206, {
-          "Content-Range": `bytes ${start}-${end}/${file.length}`,
-          "Accept-Ranges": "bytes",
-          "Content-Length": chunkSize,
-          "Content-Type": contentTypeValue,
-          "Content-Disposition": `attachment; filename="${file.name}"`,
-        });
-        fileDownload.stream(res, cleanup, range);
+        if (path(f)) {
+          file = f;
+          return;
+        }
       }
     });
+    if (!file) {
+      console.log(`file not found for info hash : ${torrent.infoHash}`);
+      res.status(404).json({
+        error: "file not found for info hash : " + torrent.infoHash,
+      });
+      return;
+    }
+    let fileDownload = this.getDownloadByPathAndHash(hash, file.path);
+    if (!fileDownload) {
+      fileDownload = new FileDownload(randomUUID(), torrent, file);
+      this.downloads.set(fileDownload.id, fileDownload);
+      fileDownload.file?.select();
+    }
+    console.log("found : " + fileDownload.file?.name);
+    if (res.headersSent) throw new Error("response already sent");
+    let metadata = fileDownload.getStreamMetaData(range);
+    res.writeHead(range ? 206 : 200, {
+      "Content-Range": `bytes ${metadata.start}-${metadata.end}/${fileDownload.file?.length}`,
+      "Accept-Ranges": "bytes",
+      "Content-Length": metadata.chunkSize,
+      "Content-Type": metadata.contentType,
+      "Content-Disposition": `attachment; filename="${fileDownload.file?.name}"`,
+    });
+    fileDownload.stream(res, cleanup, range);
+
     return fileDownload;
   }
   async experimental_streamMKV(
     magnetURI: string,
     res: Response,
     path?: string,
-    callback?: (file: WebTorrent.TorrentFile) => boolean
+    callback?: (file: FileDownload) => boolean
   ) {
-    let torrent = this.add(magnetURI, (torrent) => {
-      console.log(magnetURI);
+    let torrent = await this.getTorrent(magnetURI);
 
-      const file = torrent.files.find(
-        (f) => path === f?.path || (!path && f.name.endsWith(".mkv"))
-      );
-      if (!file) {
-        res.status(404).json({
-          error: "mkv file not found",
-        });
-        return;
-      }
-      if (typeof callback === "function") {
-        let cont = callback(file);
-        if (!cont) return;
-      }
-      res.writeHead(200, {
-        "Content-Type": "video/mp4",
-        "Transfer-Encoding": "chunked",
-        "Accept-Ranges": "none",
+    const file = torrent.files.find(
+      (f) => path === f?.path || (!path && f.name.endsWith(".mkv"))
+    );
+    if (!file) {
+      res.status(404).json({
+        error: "mkv file not found",
       });
-      const stream = file.createReadStream();
-      //@ts-ignore
-      ffmpeg(stream)
-        .videoCodec("copy")
-        .audioCodec("aac")
-        .format("mp4")
-        .videoCodec("libx264")
-        .outputOptions("-movflags frag_keyframe+empty_moov")
-        .on("error", (err) => console.error("ffmpeg error", err))
-        .pipe(res, { end: true });
+      return;
+    }
+    let fileDownload = new FileDownload(randomUUID(), torrent, file);
+    if (typeof callback === "function") {
+      let cont = callback(fileDownload);
+      if (!cont) return;
+    }
+    res.writeHead(200, {
+      "Content-Type": "video/mp4",
+      "Transfer-Encoding": "chunked",
+      "Accept-Ranges": "none",
     });
-    return torrent;
+    const stream = file.createReadStream();
+    //@ts-ignore
+    ffmpeg(stream)
+      .videoCodec("copy")
+      .audioCodec("aac")
+      .format("mp4")
+      .videoCodec("libx264")
+      .outputOptions("-movflags frag_keyframe+empty_moov")
+      .on("error", (err) => console.error("ffmpeg error", err))
+      .pipe(res, { end: true });
+    return fileDownload;
   }
   async download(
     id: string,
-    magnetURI: string,
+    hash: string,
     filePath: string,
-    downloadPath: string
+    downloadPath: string,
+    onDownload?: (fileDownload: FileDownload) => void
   ): Promise<FileDownload> {
     const fileDownload = new FileDownload(id);
     this.downloads.set(id, fileDownload);
 
-    let torrent = this.add(magnetURI, { path: downloadPath }, (torrent) => {
-      fileDownload.torrent = torrent;
-      fileDownload.emit("torrent", torrent);
+    let torrent = await this.getTorrent(hash, { path: downloadPath });
+    fileDownload.torrent = torrent;
+    fileDownload.emit("torrent", torrent);
 
-      console.log(`Downloading: ${torrent.name}`);
+    console.log(`Downloading: ${torrent.name}`);
 
-      torrent.on("done", () => {
-        console.log("Torrent download finished!");
-        //torrent.destroy();
-        fileDownload.emit("done");
-        fileDownload.removeAllListeners();
-        fileDownload.downloaded = true;
-      });
-      let found = false;
-      torrent.files.forEach((file) => {
-        if (file.path !== filePath) {
-          file.deselect();
-          return;
-        }
-        file.select();
-        found = true;
-        console.log(`Saving file: ${file.path}`);
-        fileDownload.file = file;
-        fileDownload.emit("file", torrent, file);
-      });
-      if (!found) {
-        fileDownload.emit(
-          "error",
-          new StreamerErr(
-            `${filePath} is not found in the torrent with info hash : ${torrent.infoHash}`,
-            StreamerErrCode.FILE_NOTFOUND
-          )
-        );
-        fileDownload.removeAllListeners();
-        torrent.destroy();
-      }
+    torrent.on("done", () => {
+      console.log("Torrent download finished!");
+      //torrent.destroy();
+      fileDownload.emit("done");
+      fileDownload.removeAllListeners();
+      fileDownload.downloaded = true;
     });
+    let found = false;
+    torrent.files.forEach((file) => {
+      if (file.path !== filePath) {
+        file.deselect();
+        return;
+      }
+      file.select();
+      found = true;
+      console.log(`Saving file: ${file.path}`);
+      fileDownload.file = file;
+
+      if (onDownload) {
+        onDownload(fileDownload);
+      }
+      fileDownload.emit("file", torrent, file);
+    });
+    if (!found) {
+      fileDownload.emit(
+        "error",
+        new StreamerErr(
+          `${filePath} is not found in the torrent with info hash : ${torrent.infoHash}`,
+          StreamerErrCode.FILE_NOTFOUND
+        )
+      );
+      fileDownload.removeAllListeners();
+      torrent.destroy();
+    }
     torrent.on("error", (err) => {
       if (typeof err === "string") {
         fileDownload.emit("error", new Error(err));
@@ -344,6 +322,7 @@ export class Streamer extends Webtorrent {
         console.log("error when destroying torrent : " + err.toString());
         return;
       }
+      fileDownload.emit("destroy");
       console.log("torrent destroyed and download stopped");
     });
   }
@@ -509,6 +488,7 @@ interface FileDownloadEvents {
   stream: [stream: NodeJS.ReadableStream];
   error: [err: Error];
   done: [];
+  destroy: [];
 }
 
 export class FileDownload extends EventEmitter<FileDownloadEvents> {
@@ -583,7 +563,13 @@ export class FileDownload extends EventEmitter<FileDownloadEvents> {
    * the torrent will be destroyed.
    */
   softDestroy(durationToDestroy: number, cb?: () => void) {
-    if (this.file) this.file?.deselect();
+    if (this.file) {
+      try {
+        this.file?.deselect();
+      } catch (err) {
+        console.log("failed to deselect the file : ", err);
+      }
+    }
     let destroyTorrentTimeout = setTimeout(() => {
       this.torrent?.destroy({}, (err) => {
         if (err) {
@@ -593,9 +579,12 @@ export class FileDownload extends EventEmitter<FileDownloadEvents> {
         console.log("torrent destroyed");
       });
       if (cb) cb();
+      this.emit("destroy");
     }, durationToDestroy);
-
-    this.on("stream", () => {
+    this.once("destroy", () => {
+      clearTimeout(destroyTorrentTimeout);
+    });
+    this.once("stream", () => {
       clearTimeout(destroyTorrentTimeout);
     });
   }
@@ -636,6 +625,22 @@ export class StreamsState {
   public openStreams: Map<string, StreamState>;
   constructor() {
     this.openStreams = new Map<string, StreamState>();
+  }
+  logFetchingTorrentData(hash: string): (msg?: string) => void {
+    const spinner = ["|", "/", "-", "\\"];
+    let i = 0;
+
+    const interval = setInterval(() => {
+      process.stdout.write(
+        "\r" + spinner[i++ % spinner.length] + "fetching torrent : " + hash
+      );
+    }, 100);
+    return (msg) => {
+      clearInterval(interval);
+      if (msg) {
+        process.stdout.write(`\r${msg}\n`);
+      }
+    };
   }
   getIpStreamCount(ip: string): number {
     let count = 0;

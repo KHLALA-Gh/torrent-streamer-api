@@ -33,7 +33,7 @@ export function TorrentStreamerApi(config?: Partial<HandlerConfig>) {
   stream(router, c, state);
   getMagnet(router, c);
   search(router, c);
-  getFiles(router, c);
+  getFiles(router, c, state);
   downloadFile(router, c, state);
   if (c.enableExperimentalMKVStream) {
     experimental_streamMKV(router, c, state);
