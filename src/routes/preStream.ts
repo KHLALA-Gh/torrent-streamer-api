@@ -1,8 +1,6 @@
 import { Router } from "express";
 import { HandlerConfig, State } from "../types/config.js";
 import { StreamerErr, StreamerErrCode } from "../lib/streamer.js";
-import { createMagnetLink } from "./magnet.js";
-import { trackers, wsTrackers } from "../trackers.js";
 import { randomUUID } from "crypto";
 import { nanoid } from "nanoid";
 
@@ -20,6 +18,7 @@ export function setPreStream(
         "/api/streams/" + download.id,
         `http://${req.hostname}:${req.socket.localPort}`
       );
+      download.file?.select();
       res.status(200).json({
         ...download.getFile(),
         streamUrl: url.href,
@@ -65,6 +64,7 @@ export function getPreStream(
       state.openStreams.setStreamAndLog(streamID, {
         infoHash: state.streamer.downloads.get(id)?.torrent?.infoHash || "",
         ip,
+        preStream: true,
       });
 
       res.on("close", () => {
@@ -111,10 +111,6 @@ export function stopPreStream(
       const id = req.params.id;
       await state.streamer.stopDownload(id);
       state.streamer.downloads.delete(id);
-      state.openStreams.removeStream(id);
-
-      console.clear();
-      console.table(state.openStreams.ipOpenStreamsTable());
       res.sendStatus(200);
     } catch (err) {
       if (

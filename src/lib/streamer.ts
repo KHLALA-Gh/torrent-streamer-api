@@ -49,12 +49,7 @@ export class Streamer extends Webtorrent {
     hash: string,
     opts?: WebTorrent.TorrentOptions
   ): Promise<WebTorrent.Torrent> {
-    let torrent: WebTorrent.Torrent | undefined;
-    this.torrents.find((t) => {
-      if (t.infoHash.toLocaleLowerCase() === hash.toLocaleLowerCase()) {
-        torrent = t;
-      }
-    });
+    let torrent = await this.get(hash);
     if (torrent && !torrent.name) {
       torrent = await new Promise<WebTorrent.Torrent>((res, rej) => {
         if (!torrent) return rej("torrent is undefined");
@@ -68,7 +63,13 @@ export class Streamer extends Webtorrent {
     }
     if (torrent && torrent.name) return torrent;
     torrent = await new Promise<WebTorrent.Torrent>((res, rej) => {
-      torrent = this.add(createMagnetLink(hash, trackers, wsTrackers), opts);
+      torrent = this.add(
+        createMagnetLink(hash, trackers, wsTrackers),
+        opts,
+        (torrent) => {
+          torrent.files.forEach((file) => file.deselect());
+        }
+      );
       torrent.once("ready", () => {
         if (!torrent) return rej();
 
@@ -265,7 +266,6 @@ export class Streamer extends Webtorrent {
 
     torrent.on("done", () => {
       console.log("Torrent download finished!");
-      //torrent.destroy();
       fileDownload.emit("done");
       fileDownload.removeAllListeners();
       fileDownload.downloaded = true;
@@ -273,7 +273,6 @@ export class Streamer extends Webtorrent {
     let found = false;
     torrent.files.forEach((file) => {
       if (file.path !== filePath) {
-        file.deselect();
         return;
       }
       file.select();
@@ -317,14 +316,7 @@ export class Streamer extends Webtorrent {
         StreamerErrCode.DOWNLOAD_ID_NOTFOUND
       );
     }
-    fileDownload.torrent?.destroy({}, (err) => {
-      if (err) {
-        console.log("error when destroying torrent : " + err.toString());
-        return;
-      }
-      fileDownload.emit("destroy");
-      console.log("torrent destroyed and download stopped");
-    });
+    fileDownload.file?.deselect();
   }
   getDownloads(): TorrentFile[] {
     let downloads = this.downloads.values().toArray();
