@@ -1,4 +1,9 @@
+<div align="center">
+
+<img src="./Logo.png" width="176px" align="center"/>
+
 <h1 align="center">Torrent-Streamer-Api</h1>
+</div>
 
 ## What can it do ?
 
