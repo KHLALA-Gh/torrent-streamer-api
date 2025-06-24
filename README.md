@@ -49,7 +49,7 @@ queries :
 request url : http://localhost:8080/api/search?query=ubuntu&limit=3
 
 **response** :
-The server will stream torrents one by one (Server-Sent Events).
+The server will send torrents one by one (Server-Sent Events).
 
 ```
 data: {"magnetURI":"magnet:?xt=urn:btih:D0F23C109D8662A3FE9338F75839AF8D57E5D4A9&dn=Ubuntu+MATE+16.04.2+%5BMATE%5D%5Barmhf%5D%5Bimg.xz%5D%5BUzerus%5D&tr=udp%3A%2F%2Ftracker.openbittorrent.com%3A80%2Fannounce&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&tr=http%3A%2F%2Ftracker.openbittorrent.com%3A80%2Fannounce&tr=udp%3A%2F%2Fopentracker.i2p.rocks%3A6969%2Fannounce&tr=udp%3A%2F%2Ftracker.internetwarriors.net%3A1337%2Fannounce&tr=udp%3A%2F%2Ftracker.leechers-paradise.org%3A6969%2Fannounce&tr=udp%3A%2F%2Fcoppersurfer.tk%3A6969%2Fannounce&tr=udp%3A%2F%2Ftracker.zer0day.to%3A1337%2Fannounce","infoHash":"D0F23C109D8662A3FE9338F75839AF8D57E5D4A9","torrentDownload":"http://itorrents.org/torrent/D0F23C109D8662A3FE9338F75839AF8D57E5D4A9.torrent","name":"Ubuntu MATE 16.04.2 [MATE][armhf][img.xz][Uzerus]","url":"https://1337x.to/torrent/2099267/Ubuntu-MATE-16-04-2-MATE-armhf-img-xz-Uzerus/","seeders":260,"leechers":2,"provider":"1337x","size":"1.1 GB260","uploader":"Uzerus"}
@@ -65,7 +65,9 @@ data: Closing connection
 To receive search results, you must use `EventSource` in javascript :
 
 ```javascript
-const source = new EventSource("http://localhost:8080/api/search?query=ubuntu");
+const source = new EventSource(
+  "http://localhost:8080/api/search?query=ubuntu&limit=3"
+);
 
 source.onmessage = (event) => {
   try {
@@ -139,6 +141,84 @@ request url : http://localhost:8080/api/torrents/any_hash/files/Zm9sZGVyL2ZpbGUu
 
 **response** :
 The server will stream the file for you.
+
+## Streams
+
+### Create a PreStream
+
+The server will start downloading the file before any stream requests.
+
+**endpoint : POST /api/streams**
+
+- Request body :
+
+```json
+{
+  "hash": "<Torrent Info Hash>",
+  "filePath": "<File Path>"
+}
+```
+
+- Server response
+
+```json
+{
+  "id": "<Stream id>",
+  "name": "<File Name>",
+  "path": "<File Path>",
+  "size": 381942311 /* File Size */,
+  "torrentHash": "<Info Hash>",
+  "progress": 0 /* Download progress (0 to 1) */,
+  "streamUrl": "http://domain/api/streams/<Stream id>" /* Stream URL */
+}
+```
+
+### Download PreStream
+
+Download or stream the file.
+
+**endpoint : GET /api/streams/:stream_id**
+
+- Response : Server will stream the file.
+
+### Get Streams
+
+Get all direct streams and preStreams.
+
+**endpoint : GET /api/streams**
+
+- Server Response :
+
+```json
+[
+  {
+    "id": "<Stream id>",
+    "name": "<File Name>",
+    "path": "<File Path>",
+    "size": 381942311 /* File Size */,
+    "torrentHash": "<Info Hash>",
+    "progress": 0 /* Download progress (0 to 1) */,
+    "streamUrl": "http://domain/api/streams/<Stream id>" /* Stream URL */
+  },
+  {
+    "id": "<Stream id>",
+    "name": "<File Name>",
+    "path": "<File Path>",
+    "size": 4894515 /* File Size */,
+    "torrentHash": "<Info Hash>",
+    "progress": 0.325868 /* Download progress (0 to 1) */,
+    "streamUrl": "http://domain/api/streams/<Stream id>" /* Stream URL */
+  }
+]
+```
+
+### Delete a stream
+
+Stops a stream.
+
+**endpoint DEL /api/streams/:id**
+
+- Response : server will stop downloading
 
 ## Term of use
 
