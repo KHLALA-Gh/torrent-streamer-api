@@ -1,7 +1,6 @@
 import { Router } from "express";
 import { HandlerConfig } from "../types/config.js";
 import TorrentAgent from "torrent-agent";
-
 export function search(router: Router, config: Partial<HandlerConfig>) {
   const agent = new TorrentAgent({
     QueriesConcurrency: config.queryConcurrency,
@@ -44,7 +43,13 @@ export function search(router: Router, config: Partial<HandlerConfig>) {
         console.log("error :", err.message);
       });
       query.on("done", () => {
+        res.write("event: close\n");
+        res.write("data: Closing connection\n\n");
         res.end();
+      });
+      req.on("close", async () => {
+        await query.destroy();
+        console.log("Client closed connection query destroyed");
       });
     } catch (err) {
       res.status(500).json({

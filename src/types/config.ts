@@ -6,7 +6,7 @@ export interface HandlerConfig {
    */
   streamTimeOut: number;
   /**
-   * Get files from torrent hash timeout (in ms)
+   * Get torrent files timeout (in ms)
    */
   torrentFilesTimeout: number;
   /**
@@ -26,7 +26,7 @@ export interface HandlerConfig {
    */
   queryConcurrency: number;
   /**
-   * Default search max torrents
+   * Default search torrents number limit
    */
   defaultSearchLimit: number;
   /**
