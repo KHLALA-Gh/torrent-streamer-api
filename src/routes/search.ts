@@ -1,30 +1,23 @@
 import { Router } from "express";
-import torSearch from "torrent-search-api";
-import { Torrent } from "../types/search.js";
 import { HandlerConfig } from "../types/config.js";
-
+import TorrentAgent from "torrent-agent";
 export function search(router: Router, config: Partial<HandlerConfig>) {
+  const agent = new TorrentAgent({
+    QueriesConcurrency: config.queryConcurrency,
+  });
   router.get("/api/search", async (req, res) => {
     try {
-      const providers = req.query.providers;
-
-      if (!providers || typeof providers != "string") {
-        torSearch.enablePublicProviders();
-      } else {
-        torSearch.disableAllProviders();
-        let pros = providers.split(",");
-        for (let p of pros) {
-          torSearch.enableProvider(p);
+      let limit = config.defaultSearchLimit || 20;
+      if (config.chooseSearchLimit) {
+        let limitQ = req.query.limit;
+        if (limitQ && !isNaN(+limitQ)) {
+          limit = +limitQ;
         }
       }
-      let limit = req.query.limit;
-      if (!limit || isNaN(+limit)) {
-        limit = "20";
-      }
-      let cat = req.query.category;
-      if (!cat || typeof cat != "string") {
-        cat = "Movies";
-      }
+      limit =
+        (config.maxSearchLimit || 100) < limit
+          ? config.maxSearchLimit || 100
+          : limit;
       let q = req.query.query;
       if (!q || typeof q != "string") {
         res.status(400).json({
@@ -32,19 +25,32 @@ export function search(router: Router, config: Partial<HandlerConfig>) {
         });
         return;
       }
-      const torrents = await torSearch.search(q, cat, +limit);
-      let magnets: Torrent[] = [];
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
+      const query = agent.add({
+        searchQuery: q,
+        options: {
+          limit: limit,
+          concurrency: config.searchConcurrency || 5,
+        },
+      });
 
-      for (let torrent of torrents) {
-        const magnet = await torSearch.getMagnet(torrent);
-        const t: Torrent = {
-          ...torrent,
-          magnetURI: magnet,
-        };
-        magnets.push(t);
-      }
-
-      res.status(200).json(magnets);
+      query.on("torrent", (t) => {
+        res.write(`data: ${JSON.stringify(t)}\n\n`);
+      });
+      query.on("error", (err) => {
+        console.log("error :", err.message);
+      });
+      query.on("done", () => {
+        res.write("event: close\n");
+        res.write("data: Closing connection\n\n");
+        res.end();
+      });
+      req.on("close", async () => {
+        await query.destroy();
+        console.log("Client closed connection query destroyed");
+      });
     } catch (err) {
       res.status(500).json({
         error: "Internal Server Error",
