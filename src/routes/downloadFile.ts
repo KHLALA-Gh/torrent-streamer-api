@@ -48,6 +48,11 @@ export function downloadFile(
       clearTimeout(to);
       if (!fileDownload) return;
       console.log("stream started file : " + fileDownload.file?.name);
+      const url = new URL(
+        "/api/streams/" + fileDownload.id,
+        `http://${req.hostname}:${req.socket.localPort}`
+      );
+      fileDownload.streamUrl = url.href;
       state.openStreams.setStreamAndLog(streamID, {
         ip,
         preStream: false,
