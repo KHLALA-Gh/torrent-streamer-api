@@ -20,7 +20,7 @@ The Torrent Streamer API is a RESTful API built with Node.js and the Express lib
 install the library
 
 ```shell
-npm i torrent-streamer-api@2.0.0-rc.1
+npm i torrent-streamer-api
 ```
 
 ## How to use it ?
