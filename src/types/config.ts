@@ -1,4 +1,4 @@
-import { Streamer, StreamsState } from "../lib/streamer";
+import { FileDownload, Streamer, StreamsState } from "../lib/streamer.js";
 
 export interface HandlerConfig {
   /**  Set a max duration to wait for the engine to be ready. (in ms)
@@ -44,12 +44,17 @@ export interface HandlerConfig {
    * @note : Duration in milliseconds (ms).
    */
   destroyTorrentTimeout: number;
+  /**
+   * Server Status. (just for information)
+   */
+  ServerStatus: "ok" | "not ok";
 }
 
 export interface StreamState {
   ip: string;
   infoHash: string;
   preStream?: boolean;
+  fileDownload: FileDownload;
 }
 
 export interface State {
@@ -73,4 +78,5 @@ export const defaultConf: HandlerConfig = {
   chooseSearchLimit: true,
   enableExperimentalMKVStream: false,
   destroyTorrentTimeout: 60 * 1000,
+  ServerStatus: "ok",
 };

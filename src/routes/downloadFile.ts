@@ -1,8 +1,10 @@
 import { Router } from "express";
-import { HandlerConfig, State } from "../types/config.js";
+import { HandlerConfig } from "../types/config.js";
 import { StreamerErr, StreamerErrCode } from "../lib/streamer.js";
 import { decodeToUTF8 } from "../lib/encoder.js";
 import { nanoid } from "nanoid";
+import requestIp from "request-ip";
+import { State } from "../lib/state.js";
 export function downloadFile(
   router: Router,
   config: HandlerConfig,
@@ -10,10 +12,7 @@ export function downloadFile(
 ) {
   router.get("/api/torrents/:hash/files/:path", async (req, res) => {
     try {
-      let ip = req.ip || "";
-      if (ip === "::1") {
-        ip = "127.0.0.1";
-      }
+      const ip = requestIp.getClientIp(req) || "";
       let limit = config?.ipStreamLimit || 10;
       if (state?.openStreams.getIpStreamCount(ip) >= limit) {
         res.status(403).json({
@@ -37,7 +36,7 @@ export function downloadFile(
         path,
         (fileDownload) => {
           state.openStreams.removeStreamAndLog(streamID);
-          if (!state.openStreams.getIpStreamCount(ip)) {
+          if (!state.openStreams.getTorrentCount(hash)) {
             fileDownload.softDestroy(config.destroyTorrentTimeout, () => {
               state.streamer.downloads.delete(fileDownload.id);
             });
@@ -53,10 +52,11 @@ export function downloadFile(
         `http://${req.hostname}:${req.socket.localPort}`
       );
       fileDownload.streamUrl = url.href;
-      state.openStreams.setStreamAndLog(streamID, {
+      state.setStream(streamID, {
         ip,
         preStream: false,
         infoHash: hash,
+        fileDownload,
       });
     } catch (err) {
       console.log(err);

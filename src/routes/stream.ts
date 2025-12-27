@@ -1,7 +1,9 @@
 import { Router } from "express";
-import { HandlerConfig, State } from "../types/config";
+import { HandlerConfig } from "../types/config";
 import { decodeToUTF8 } from "../lib/encoder.js";
 import { nanoid } from "nanoid";
+import { getClientIp } from "request-ip";
+import { State } from "../lib/state";
 
 export function stream(router: Router, config: HandlerConfig, state: State) {
   router.get("/api/stream", async (req, res) => {
@@ -30,15 +32,17 @@ export function stream(router: Router, config: HandlerConfig, state: State) {
         return;
       }
       const range = req.headers.range;
+
       const fileDownload = await state.streamer.streamFile(
         hash,
         res,
         (file) => {
-          if (file.name.endsWith(".mp4")) return true;
+          if (file.name.endsWith(".mp4") || file.name.endsWith(".mkv"))
+            return true;
           return false;
         },
         (fileDownload) => {
-          state.openStreams.removeStream(id);
+          state.removeStream(id);
           if (!state.openStreams.getIpStreamCount(ip)) {
             fileDownload.softDestroy(config.destroyTorrentTimeout, () => {
               state.streamer.downloads.delete(fileDownload.id);
@@ -48,12 +52,13 @@ export function stream(router: Router, config: HandlerConfig, state: State) {
         range
       );
       if (!fileDownload) return;
-      state.openStreams.setStream(id, {
+      state.setStream(id, {
         ip,
         infoHash: hash,
+        fileDownload,
       });
       res.on("close", () => {
-        state.openStreams.removeStream(id);
+        state.removeStream(id);
         if (!state.openStreams.getIpStreamCount(ip)) {
           fileDownload.softDestroy(config.destroyTorrentTimeout, () => {
             state.streamer.downloads.delete(fileDownload.id);
@@ -81,10 +86,7 @@ export function experimental_streamMKV(
         });
         return;
       }
-      let ip = req.ip || "";
-      if (ip === "::1") {
-        ip = "127.0.0.1";
-      }
+      let ip = getClientIp(req) || "";
       let limit = config?.ipStreamLimit || 10;
       if (state?.openStreams.getIpStreamCount(ip) >= limit) {
         res.status(403).json({
@@ -110,9 +112,10 @@ export function experimental_streamMKV(
         res,
         decodeToUTF8(filePath64),
         (file) => {
-          state.openStreams.setStream(id, {
+          state.setStream(id, {
             ip,
             infoHash: file.torrent?.infoHash || "",
+            fileDownload: file,
           });
           console.clear();
           console.table(state.openStreams.ipOpenStreamsTable());
@@ -120,7 +123,7 @@ export function experimental_streamMKV(
         }
       );
       req.on("close", () => {
-        state.openStreams.removeStream(id);
+        state.removeStream(id);
         console.clear();
         console.table(state.openStreams.ipOpenStreamsTable());
         fileDownload?.softDestroy(config.destroyTorrentTimeout, () => {

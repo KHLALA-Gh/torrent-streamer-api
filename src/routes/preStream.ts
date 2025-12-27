@@ -1,8 +1,10 @@
 import { Router } from "express";
-import { HandlerConfig, State } from "../types/config.js";
+import { HandlerConfig } from "../types/config.js";
 import { StreamerErr, StreamerErrCode } from "../lib/streamer.js";
 import { randomUUID } from "crypto";
 import { nanoid } from "nanoid";
+import { getClientIp } from "request-ip";
+import { State } from "../lib/state.js";
 
 export function setPreStream(
   router: Router,
@@ -37,6 +39,12 @@ export function setPreStream(
           `http://${req.hostname}:${req.socket.localPort}`
         );
         fileDownload.streamUrl = url.href;
+        state.setStream(id, {
+          ip: req.ip || "",
+          infoHash: hash,
+          preStream: true,
+          fileDownload,
+        });
         res.status(200).json({
           ...fileDownload.getFile(),
           streamUrl: url.href,
@@ -55,17 +63,21 @@ export function getPreStream(
     try {
       const id = req.params.id;
       const range = req.headers.range;
-      let stream = state.streamer.streamDownlaod(id, res, range);
       let streamID = nanoid();
-      let ip = req.ip || "";
-      if (ip === "::1") {
-        ip = "127.0.0.1";
-      }
-      state.openStreams.setStreamAndLog(streamID, {
-        infoHash: state.streamer.downloads.get(id)?.torrent?.infoHash || "",
-        ip,
-        preStream: true,
-      });
+
+      let stream = state.streamer.streamDownlaod(
+        id,
+        res,
+        range,
+        (fileDownload) => {
+          let ip = getClientIp(req) || "";
+          state.setStream(streamID, {
+            infoHash: state.streamer.downloads.get(id)?.torrent?.infoHash || "",
+            ip,
+            fileDownload,
+          });
+        }
+      );
 
       res.on("close", () => {
         //@ts-ignore
@@ -74,12 +86,12 @@ export function getPreStream(
             console.log("error when closing stream : ", err);
             return;
           }
-          state.openStreams.removeStreamAndLog(streamID);
+          state.removeStream(streamID);
           console.log("stream destroyed");
         });
       });
       stream.on("close", () => {
-        state.openStreams.removeStreamAndLog(streamID);
+        state.removeStream(streamID);
         console.log("stream closed");
       });
     } catch (err) {
@@ -111,6 +123,7 @@ export function stopPreStream(
       const id = req.params.id;
       await state.streamer.stopDownload(id);
       state.streamer.downloads.delete(id);
+      state.removeStream(id);
       res.sendStatus(200);
     } catch (err) {
       if (
@@ -125,6 +138,7 @@ export function stopPreStream(
       res.status(500).json({
         err: "server error",
       });
+      console.log("unknown error when stopping stream : ", err);
     }
   });
 }
