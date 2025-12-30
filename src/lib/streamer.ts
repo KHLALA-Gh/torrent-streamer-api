@@ -45,6 +45,14 @@ export class Streamer extends Webtorrent {
       console.log(err);
     });
   }
+  destroyStreamer(callback?: (err: Error | string) => void): void {
+    this.destroy((err) => {
+      if (!err) {
+        this.downloads.clear();
+      }
+      if (callback) callback(err);
+    });
+  }
   async getTorrent(
     hash: string,
     opts?: WebTorrent.TorrentOptions
@@ -679,5 +687,8 @@ export class StreamsState {
       if (s.infoHash === hash) count++;
     });
     return count;
+  }
+  clear() {
+    this.openStreams.clear();
   }
 }

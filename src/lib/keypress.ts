@@ -9,6 +9,7 @@ export interface Keys {
 }
 
 export class KeyPress extends Map<string, KeyFn> {
+  private listener?: (ch: string, key: readline.Key) => void;
   constructor(keys: Keys = {}) {
     super(Object.entries(keys));
   }
@@ -28,8 +29,7 @@ export class KeyPress extends Map<string, KeyFn> {
   start() {
     readline.emitKeypressEvents(process.stdin);
     if (process.stdin.isTTY) process.stdin.setRawMode(true);
-
-    process.stdin.on("keypress", async (_ch, key) => {
+    this.listener = async (_ch, key) => {
       if (!key) return;
 
       const keyId = KeyPress.getKeyId(key as readline.Key);
@@ -42,7 +42,8 @@ export class KeyPress extends Map<string, KeyFn> {
       if (key.ctrl && key.name === "c") {
         process.exit();
       }
-    });
+    };
+    process.stdin.on("keypress", this.listener);
   }
 
   bind(keyCombo: string, handler: KeyFn) {
@@ -52,5 +53,18 @@ export class KeyPress extends Map<string, KeyFn> {
   // Remove a key handler
   unbind(keyCombo: string) {
     this.delete(keyCombo);
+  }
+  /**
+   * Stops listening to keys.
+   */
+  stop(): void {
+    if (!this.listener) return;
+
+    process.stdin.off("keypress", this.listener);
+    if (process.stdin.isTTY) {
+      process.stdin.setRawMode(false);
+    }
+    process.stdin.pause();
+    this.listener = undefined;
   }
 }

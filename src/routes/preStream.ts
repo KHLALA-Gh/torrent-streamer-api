@@ -14,7 +14,7 @@ export function setPreStream(
   router.post("/api/streams", async (req, res) => {
     let hash = req.body.hash;
     let filePath = req.body.filePath;
-    const download = state.streamer.getDownloadByPathAndHash(hash, filePath);
+    const download = state.streamer?.getDownloadByPathAndHash(hash, filePath);
     if (download) {
       const url = new URL(
         "/api/streams/" + download.id,
@@ -28,11 +28,11 @@ export function setPreStream(
       return;
     }
     const id = randomUUID();
-    state.streamer.download(
+    state.streamer?.download(
       id,
       hash,
       filePath,
-      state.cache.dirPath,
+      state.cache?.dirPath || "",
       (fileDownload) => {
         const url = new URL(
           "/api/streams/" + id,
@@ -65,14 +65,15 @@ export function getPreStream(
       const range = req.headers.range;
       let streamID = nanoid();
 
-      let stream = state.streamer.streamDownlaod(
+      let stream = state.streamer?.streamDownlaod(
         id,
         res,
         range,
         (fileDownload) => {
           let ip = getClientIp(req) || "";
           state.setStream(streamID, {
-            infoHash: state.streamer.downloads.get(id)?.torrent?.infoHash || "",
+            infoHash:
+              state.streamer?.downloads.get(id)?.torrent?.infoHash || "",
             ip,
             fileDownload,
           });
@@ -90,7 +91,7 @@ export function getPreStream(
           console.log("stream destroyed");
         });
       });
-      stream.on("close", () => {
+      stream?.on("close", () => {
         state.removeStream(streamID);
         console.log("stream closed");
       });
@@ -108,7 +109,7 @@ export function getPreStreams(
   state: State
 ) {
   router.get("/api/streams/", (req, res) => {
-    const files = state.streamer.getDownloads();
+    const files = state.streamer?.getDownloads();
     res.status(200).json(files);
   });
 }
@@ -121,8 +122,8 @@ export function stopPreStream(
   router.delete("/api/streams/:id", async (req, res) => {
     try {
       const id = req.params.id;
-      await state.streamer.stopDownload(id);
-      state.streamer.downloads.delete(id);
+      await state.streamer?.stopDownload(id);
+      state.streamer?.downloads.delete(id);
       state.removeStream(id);
       res.sendStatus(200);
     } catch (err) {

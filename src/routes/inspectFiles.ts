@@ -1,8 +1,9 @@
 import { Router } from "express";
-import { HandlerConfig, State } from "../types/config";
+import { HandlerConfig } from "../types/config";
 import { TorrentFileMetaData } from "../types/torrent";
 import { encodeTo64 } from "../lib/encoder.js";
 import { Torrent } from "webtorrent";
+import { State } from "../lib/state";
 
 function getTorrnetFiles(torrent: Torrent): TorrentFileMetaData[] {
   let files: TorrentFileMetaData[] = [];
@@ -32,13 +33,20 @@ export function getFiles(
       req.on("close", () => {
         clearTimeout(to);
       });
-      let stop = state.openStreams.logFetchingTorrentData(hash);
+      let stop = state.logger?.logTask(`fetching torrent : ${hash}`);
 
-      let torrent = await state.streamer.getTorrent(hash);
-      stop(
-        `Done!\nInfo Hash : ${hash}\nName : ${torrent.name}\nFiles : ${torrent.files.length}`
-      );
+      let torrent = await state.streamer?.getTorrent(hash);
+      if (stop)
+        stop(
+          `Done!\nInfo Hash : ${hash}\nName : ${torrent?.name}\nFiles : ${torrent?.files.length}`
+        );
       clearTimeout(to);
+      if (!torrent) {
+        res.status(500).json({
+          error: "inable to get torrent",
+        });
+        return;
+      }
       let files = getTorrnetFiles(torrent);
       if (res.headersSent) return;
       res.status(200).json(files);

@@ -14,7 +14,7 @@ export function downloadFile(
     try {
       const ip = requestIp.getClientIp(req) || "";
       let limit = config?.ipStreamLimit || 10;
-      if (state?.openStreams.getIpStreamCount(ip) >= limit) {
+      if ((state?.openStreams?.getIpStreamCount(ip) || 0) >= limit) {
         res.status(403).json({
           error: "you reached your stream limit",
         });
@@ -30,15 +30,15 @@ export function downloadFile(
         }
       }, config?.torrentFilesTimeout || 10 * 1000);
       let streamID = nanoid();
-      let fileDownload = await state.streamer.streamFile(
+      let fileDownload = await state.streamer?.streamFile(
         hash,
         res,
         path,
         (fileDownload) => {
-          state.openStreams.removeStreamAndLog(streamID);
-          if (!state.openStreams.getTorrentCount(hash)) {
+          state.openStreams?.removeStreamAndLog(streamID);
+          if (!state.openStreams?.getTorrentCount(hash)) {
             fileDownload.softDestroy(config.destroyTorrentTimeout, () => {
-              state.streamer.downloads.delete(fileDownload.id);
+              state.streamer?.downloads.delete(fileDownload.id);
             });
           }
         },

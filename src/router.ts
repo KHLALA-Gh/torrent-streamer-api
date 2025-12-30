@@ -5,7 +5,7 @@ import { search } from "./routes/search.js";
 import { defaultConf, HandlerConfig } from "./types/config.js";
 import { getFiles } from "./routes/inspectFiles.js";
 import { downloadFile } from "./routes/downloadFile.js";
-import { Streamer, StreamsState } from "./lib/streamer.js";
+import { Streamer } from "./lib/streamer.js";
 import {
   getPreStream,
   getPreStreams,
@@ -14,9 +14,8 @@ import {
 } from "./routes/preStream.js";
 import { status } from "./routes/status.js";
 import { Controllers } from "./index.js";
-import { KeyPress } from "./lib/keypress.js";
 import { State } from "./lib/state.js";
-import { Logger } from "./lib/logger.js";
+import { verifyState } from "./routes/middleware.js";
 
 /**
  * The Torrent Streamer Api Handlers
@@ -31,15 +30,16 @@ export function TorrentStreamerApi(
 
   const router = Router();
   const streamer = new Streamer();
-  const state = new State(streamer, {
+  const state = new State(streamer, c, {
     dirPath: "/tmp/torrent-streamer-api",
   });
   if (controllers) {
     controllers.destroy = (cb) => {
-      streamer.destroy(cb);
-      state.openStreams = new StreamsState();
+      state.destroy(cb);
+      console.log("torrent streamer api destroyed");
     };
   }
+  verifyState(router, c, state);
   stream(router, c, state);
   getMagnet(router, c);
   search(router, c);
@@ -53,19 +53,5 @@ export function TorrentStreamerApi(
   getPreStreams(router, c, state);
   stopPreStream(router, c, state);
   status(router, c, state);
-  const logger = new Logger(state, "streams");
-  logger.log();
-  const keyPress = new KeyPress({
-    t: () => {
-      logger.setMode("torrents");
-    },
-    s: () => {
-      logger.setMode("streams");
-    },
-    f: () => {
-      logger.setMode("files");
-    },
-  });
-  keyPress.start();
   return router;
 }

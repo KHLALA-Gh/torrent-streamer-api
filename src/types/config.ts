@@ -48,6 +48,10 @@ export interface HandlerConfig {
    * Server Status. (just for information)
    */
   ServerStatus: "ok" | "not ok";
+  /**
+   * allow logs
+   */
+  allowLogs: boolean;
 }
 
 export interface StreamState {
@@ -58,9 +62,9 @@ export interface StreamState {
 }
 
 export interface State {
-  openStreams: StreamsState;
-  cache: Cache;
-  streamer: Streamer;
+  openStreams: StreamsState | null;
+  cache: Cache | null;
+  streamer: Streamer | null;
 }
 
 export interface Cache {
@@ -79,4 +83,5 @@ export const defaultConf: HandlerConfig = {
   enableExperimentalMKVStream: false,
   destroyTorrentTimeout: 60 * 1000,
   ServerStatus: "ok",
+  allowLogs: true,
 };

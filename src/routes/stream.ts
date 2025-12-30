@@ -13,7 +13,7 @@ export function stream(router: Router, config: HandlerConfig, state: State) {
         ip = "127.0.0.1";
       }
       let limit = config?.ipStreamLimit || 10;
-      if (state?.openStreams.getIpStreamCount(ip) >= limit) {
+      if ((state?.openStreams?.getIpStreamCount(ip) || 0) >= limit) {
         res.status(403).json({
           error: "you reached your stream limit",
         });
@@ -33,7 +33,7 @@ export function stream(router: Router, config: HandlerConfig, state: State) {
       }
       const range = req.headers.range;
 
-      const fileDownload = await state.streamer.streamFile(
+      const fileDownload = await state.streamer?.streamFile(
         hash,
         res,
         (file) => {
@@ -43,9 +43,9 @@ export function stream(router: Router, config: HandlerConfig, state: State) {
         },
         (fileDownload) => {
           state.removeStream(id);
-          if (!state.openStreams.getIpStreamCount(ip)) {
+          if (!state.openStreams?.getIpStreamCount(ip)) {
             fileDownload.softDestroy(config.destroyTorrentTimeout, () => {
-              state.streamer.downloads.delete(fileDownload.id);
+              state.streamer?.downloads.delete(fileDownload.id);
             });
           }
         },
@@ -59,9 +59,9 @@ export function stream(router: Router, config: HandlerConfig, state: State) {
       });
       res.on("close", () => {
         state.removeStream(id);
-        if (!state.openStreams.getIpStreamCount(ip)) {
+        if (!state.openStreams?.getIpStreamCount(ip)) {
           fileDownload.softDestroy(config.destroyTorrentTimeout, () => {
-            state.streamer.downloads.delete(fileDownload.id);
+            state.streamer?.downloads.delete(fileDownload.id);
           });
         }
       });
@@ -88,7 +88,7 @@ export function experimental_streamMKV(
       }
       let ip = getClientIp(req) || "";
       let limit = config?.ipStreamLimit || 10;
-      if (state?.openStreams.getIpStreamCount(ip) >= limit) {
+      if ((state?.openStreams?.getIpStreamCount(ip) || 0) >= limit) {
         res.status(403).json({
           error: "you reached your stream limit",
         });
@@ -107,7 +107,7 @@ export function experimental_streamMKV(
         return;
       }
 
-      const fileDownload = await state.streamer.experimental_streamMKV(
+      const fileDownload = await state.streamer?.experimental_streamMKV(
         magnetURI,
         res,
         decodeToUTF8(filePath64),
@@ -118,14 +118,14 @@ export function experimental_streamMKV(
             fileDownload: file,
           });
           console.clear();
-          console.table(state.openStreams.ipOpenStreamsTable());
+          console.table(state.openStreams?.ipOpenStreamsTable());
           return !res.headersSent;
         }
       );
       req.on("close", () => {
         state.removeStream(id);
         console.clear();
-        console.table(state.openStreams.ipOpenStreamsTable());
+        console.table(state.openStreams?.ipOpenStreamsTable());
         fileDownload?.softDestroy(config.destroyTorrentTimeout, () => {
           console.log("experimental_stream_mkv : torrent destroyed");
         });
