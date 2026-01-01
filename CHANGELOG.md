@@ -1,5 +1,11 @@
 # torrent-streamer-api
 
+## 2.2.0
+
+### Minor Changes
+
+- New logger with keypress and fix stream errors.
+
 ## 2.0.0
 
 ### Major Changes
