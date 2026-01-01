@@ -240,8 +240,8 @@ TorrentStreamer(
 ```
 
 pass the controller variable into the TorrentStreamer function to assign
-the functions inside the controller then you can use the
-controller.
+the functions inside the controller then you can use
+it.
 
 ### controller functions :
 
