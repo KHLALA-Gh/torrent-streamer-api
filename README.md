@@ -225,6 +225,46 @@ Stops a stream.
 
 - Response : server will stop downloading
 
+## Controller
+
+Controller is an object that has functions that let you control the streamer.
+
+```js
+let controller = {};
+TorrentStreamer(
+  {
+    // your config...
+  },
+  controllers
+);
+```
+
+pass the controller variable into the TorrentStreamer function to assign
+the functions inside the controller then you can use the
+controller.
+
+### controller functions :
+
+- `destroy()` : destroys the streamer and clears the state. (all the streams will stop).
+
+### example :
+
+```js
+let controller = {};
+
+app.use(TorrentStreamer({}, controller));
+
+let server = app.listen(8080);
+server.on("close", () => {
+  controller.destroy((err) => {
+    if (err) {
+      console.log(err);
+    }
+    console.log("streamer destroyed");
+  });
+});
+```
+
 ## Term of use
 
 **Please do not use this software with copyrighted or illegal content.**

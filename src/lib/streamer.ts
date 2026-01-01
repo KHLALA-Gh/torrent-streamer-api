@@ -45,6 +45,14 @@ export class Streamer extends Webtorrent {
       console.log(err);
     });
   }
+  destroyStreamer(callback?: (err: Error | string) => void): void {
+    this.destroy((err) => {
+      if (!err) {
+        this.downloads.clear();
+      }
+      if (callback) callback(err);
+    });
+  }
   async getTorrent(
     hash: string,
     opts?: WebTorrent.TorrentOptions
@@ -193,6 +201,7 @@ export class Streamer extends Webtorrent {
     if (!fileDownload) {
       fileDownload = new FileDownload(randomUUID(), torrent, file);
       this.downloads.set(fileDownload.id, fileDownload);
+      this.emit("file", fileDownload);
       fileDownload.file?.select();
     }
     console.log("found : " + fileDownload.file?.name);
@@ -257,7 +266,7 @@ export class Streamer extends Webtorrent {
   ): Promise<FileDownload> {
     const fileDownload = new FileDownload(id);
     this.downloads.set(id, fileDownload);
-
+    this.emit("file", fileDownload);
     let torrent = await this.getTorrent(hash, { path: downloadPath });
     fileDownload.torrent = torrent;
     fileDownload.emit("torrent", torrent);
@@ -353,7 +362,8 @@ export class Streamer extends Webtorrent {
   streamDownlaod(
     id: string,
     res: Response,
-    range?: string
+    range?: string,
+    cb?: (fileDownload: FileDownload) => void
   ): NodeJS.ReadableStream {
     const download = this.downloads.get(id);
     if (!download || !download.file) {
@@ -367,28 +377,22 @@ export class Streamer extends Webtorrent {
     let fileExt = download.file.name.split(".").pop() || "";
 
     let contentTypeValue = contentType[fileExt] || "application/octet-stream";
-
+    let stream: NodeJS.ReadableStream;
+    let start: number;
+    let end: number;
     if (!range) {
-      const start = 0;
-      const end = file.length - 1;
-      const stream = file.createReadStream({ start, end });
+      start = 0;
+      end = file.length - 1;
 
       res.writeHead(200, {
         "Content-Length": file.length,
         "Content-Type": contentTypeValue,
         "Content-Disposition": `attachment; filename="${file.name}"`,
       });
-
-      stream.pipe(res);
-      stream.on("error", (err) => {
-        console.error("Stream error:", err);
-        res.end();
-      });
-      return stream;
     } else {
       const positions = range.replace(/bytes=/, "").split("-");
-      const start = parseInt(positions[0], 10);
-      const end = positions[1] ? parseInt(positions[1], 10) : file.length - 1;
+      start = parseInt(positions[0], 10);
+      end = positions[1] ? parseInt(positions[1], 10) : file.length - 1;
 
       const chunkSize = end - start + 1;
 
@@ -399,15 +403,15 @@ export class Streamer extends Webtorrent {
         "Content-Type": contentTypeValue,
         "Content-Disposition": `attachment; filename="${file.name}"`,
       });
-      const stream = file.createReadStream({ start, end });
-      stream.pipe(res);
-
-      stream.on("error", (err) => {
-        console.error("Stream error:", err);
-        res.end();
-      });
-      return stream;
     }
+    stream = file.createReadStream({ start, end });
+    stream.pipe(res);
+    stream.on("error", (err) => {
+      console.error("Stream error:", err);
+      res.end();
+    });
+    if (typeof cb === "function") cb(download);
+    return stream;
   }
   streamTo(download: FileDownload, res: Response, range?: string) {
     let file = download.file;
@@ -676,5 +680,15 @@ export class StreamsState {
   }
   removeStream(id: string) {
     this.openStreams.delete(id);
+  }
+  getTorrentCount(hash: string): number {
+    let count = 0;
+    this.openStreams.forEach((s) => {
+      if (s.infoHash === hash) count++;
+    });
+    return count;
+  }
+  clear() {
+    this.openStreams.clear();
   }
 }
