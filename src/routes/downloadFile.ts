@@ -8,7 +8,7 @@ import { State } from "../lib/state.js";
 export function downloadFile(
   router: Router,
   config: HandlerConfig,
-  state: State
+  state: State,
 ) {
   router.get("/api/torrents/:hash/files/:path", async (req, res) => {
     try {
@@ -30,33 +30,22 @@ export function downloadFile(
         }
       }, config?.torrentFilesTimeout || 10 * 1000);
       let streamID = nanoid();
-      let fileDownload = await state.streamer?.streamFile(
+      let { download, torrent, file } = await state.streamer?.streamFile(
         hash,
         res,
         path,
         (fileDownload) => {
           state.openStreams?.removeStreamAndLog(streamID);
-          if (!state.openStreams?.getTorrentCount(hash)) {
-            fileDownload.softDestroy(config.destroyTorrentTimeout, () => {
-              state.streamer?.downloads.delete(fileDownload.id);
-            });
-          }
         },
-        range
+        range,
       );
       clearTimeout(to);
-      if (!fileDownload) return;
-      console.log("stream started file : " + fileDownload.file?.name);
-      const url = new URL(
-        "/api/streams/" + fileDownload.id,
-        `http://${req.hostname}:${req.socket.localPort}`
-      );
-      fileDownload.streamUrl = url.href;
+      console.log("stream started file : " + file.name);
       state.setStream(streamID, {
         ip,
         preStream: false,
         infoHash: hash,
-        fileDownload,
+        filePath: file.path,
       });
     } catch (err) {
       console.log(err);

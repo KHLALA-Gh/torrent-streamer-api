@@ -13,9 +13,12 @@ export enum StreamerErrCode {
   "MP4FILE_NOTFOUND",
   "INVALID_PATH",
   "FILE_NOTFOUND",
-  "DOWNLOAD_ID_NOTFOUND",
+  "DOWNLOAD_NOTFOUND",
+  "TORRENT_NOTFOUND",
 }
-
+import fs from "fs";
+import os from "os";
+import path from "path";
 export class StreamerErr extends Error {
   code: StreamerErrCode;
   constructor(msg: string, code: StreamerErrCode) {
@@ -35,9 +38,15 @@ export const contentType: { [T: string]: string } = {
   mov: "video/quicktime",
   mpg: "video/mpeg",
 };
-
+function sameRealPath(a: string, b: string) {
+  try {
+    return fs.realpathSync(a) === fs.realpathSync(b);
+  } catch {
+    return false;
+  }
+}
 export class Streamer extends Webtorrent {
-  public downloads: Map<string, FileDownload>;
+  public downloads: Map<string, Download>;
   constructor() {
     super();
     this.downloads = new Map();
@@ -55,7 +64,7 @@ export class Streamer extends Webtorrent {
   }
   async getTorrent(
     hash: string,
-    opts?: WebTorrent.TorrentOptions
+    opts?: WebTorrent.TorrentOptions,
   ): Promise<WebTorrent.Torrent> {
     let torrent = await this.get(hash);
     if (torrent && !torrent.name) {
@@ -76,7 +85,7 @@ export class Streamer extends Webtorrent {
         opts,
         (torrent) => {
           torrent.files.forEach((file) => file.deselect());
-        }
+        },
       );
       torrent.once("ready", () => {
         if (!torrent) return rej();
@@ -94,7 +103,7 @@ export class Streamer extends Webtorrent {
     res: Response,
     filePath?: string,
     range?: string,
-    callback?: (file: WebTorrent.TorrentFile) => boolean
+    callback?: (file: WebTorrent.TorrentFile) => boolean,
   ) {
     let torrent = this.add(magnetURI, (torrent) => {
       if (filePath && !filePath.endsWith(".mp4")) {
@@ -164,13 +173,17 @@ export class Streamer extends Webtorrent {
     hash: string,
     res: Response,
     path: string | ((file: WebTorrent.TorrentFile) => boolean),
-    cleanup: (download: FileDownload) => void,
-    range?: string
-  ): Promise<FileDownload | undefined> {
+    cleanup: (torrent: Download) => void,
+    range?: string,
+  ): Promise<{
+    torrent: WebTorrent.Torrent;
+    download: Download;
+    file: WebTorrent.TorrentFile;
+  }> {
     if (!path) {
       throw new StreamerErr(
         `${path} path is invalid`,
-        StreamerErrCode.INVALID_PATH
+        StreamerErrCode.INVALID_PATH,
       );
     }
     let torrent = await this.getTorrent(hash);
@@ -195,39 +208,38 @@ export class Streamer extends Webtorrent {
       res.status(404).json({
         error: "file not found for info hash : " + torrent.infoHash,
       });
-      return;
+      throw new StreamerErr("file not found", StreamerErrCode.FILE_NOTFOUND);
     }
-    let fileDownload = this.getDownloadByPathAndHash(hash, file.path);
-    if (!fileDownload) {
-      fileDownload = new FileDownload(randomUUID(), torrent, file);
-      this.downloads.set(fileDownload.id, fileDownload);
-      this.emit("file", fileDownload);
-      fileDownload.file?.select();
+    let download = this.downloads.get(hash);
+    if (!download) {
+      download = new Download({ hash, selectedFiles: [file.path] });
+      this.downloads.set(hash, download);
+      this.emit("download", download);
+      download.selectFile(file);
     }
-    console.log("found : " + fileDownload.file?.name);
+    console.log("found : " + file.name);
     if (res.headersSent) throw new Error("response already sent");
-    let metadata = fileDownload.getStreamMetaData(range);
+    let metadata = Download.getStreamMetaData(file, range);
     res.writeHead(range ? 206 : 200, {
-      "Content-Range": `bytes ${metadata.start}-${metadata.end}/${fileDownload.file?.length}`,
+      "Content-Range": `bytes ${metadata.start}-${metadata.end}/${file.length}`,
       "Accept-Ranges": "bytes",
       "Content-Length": metadata.chunkSize,
       "Content-Type": metadata.contentType,
-      "Content-Disposition": `attachment; filename="${fileDownload.file?.name}"`,
+      "Content-Disposition": `attachment; filename="${file.name}"`,
     });
-    fileDownload.stream(res, cleanup, range);
-
-    return fileDownload;
+    download.streamFile(res, file, cleanup, range);
+    return { torrent, file, download };
   }
   async experimental_streamMKV(
-    magnetURI: string,
+    hash: string,
     res: Response,
     path?: string,
-    callback?: (file: FileDownload) => boolean
+    callback?: (file: Download) => boolean,
   ) {
-    let torrent = await this.getTorrent(magnetURI);
+    let torrent = await this.getTorrent(hash);
 
     const file = torrent.files.find(
-      (f) => path === f?.path || (!path && f.name.endsWith(".mkv"))
+      (f) => path === f?.path || (!path && f.name.endsWith(".mkv")),
     );
     if (!file) {
       res.status(404).json({
@@ -235,9 +247,9 @@ export class Streamer extends Webtorrent {
       });
       return;
     }
-    let fileDownload = new FileDownload(randomUUID(), torrent, file);
+    let download = new Download({ hash, selectedFiles: [file.path] });
     if (typeof callback === "function") {
-      let cont = callback(fileDownload);
+      let cont = callback(download);
       if (!cont) return;
     }
     res.writeHead(200, {
@@ -255,230 +267,125 @@ export class Streamer extends Webtorrent {
       .outputOptions("-movflags frag_keyframe+empty_moov")
       .on("error", (err) => console.error("ffmpeg error", err))
       .pipe(res, { end: true });
-    return fileDownload;
+    return { download, torrent };
   }
   async download(
-    id: string,
     hash: string,
     filePath: string,
     downloadPath: string,
-    onDownload?: (fileDownload: FileDownload) => void
-  ): Promise<FileDownload> {
-    const fileDownload = new FileDownload(id);
-    this.downloads.set(id, fileDownload);
-    this.emit("file", fileDownload);
+  ): Promise<Download> {
     let torrent = await this.getTorrent(hash, { path: downloadPath });
-    fileDownload.torrent = torrent;
-    fileDownload.emit("torrent", torrent);
+    const download = new Download({ hash, selectedFiles: [filePath] });
+    this.downloads.set(hash, download);
+    this.emit("download", download);
+    download.emit("torrent", torrent);
 
+    let selectedCount = download.applySelection(torrent);
+    if (!selectedCount) {
+      throw new StreamerErr(
+        `${filePath} is not found in the torrent with info hash : ${torrent.infoHash}`,
+        StreamerErrCode.FILE_NOTFOUND,
+      );
+    }
     console.log(`Downloading: ${torrent.name}`);
 
     torrent.on("done", () => {
       console.log("Torrent download finished!");
-      fileDownload.emit("done");
-      fileDownload.removeAllListeners();
-      fileDownload.downloaded = true;
+      download.emit("done");
+      download.removeAllListeners();
+      download.downloaded = true;
     });
-    let found = false;
-    torrent.files.forEach((file) => {
-      if (file.path !== filePath) {
-        return;
-      }
-      file.select();
-      found = true;
-      console.log(`Saving file: ${file.path}`);
-      fileDownload.file = file;
-
-      if (onDownload) {
-        onDownload(fileDownload);
-      }
-      fileDownload.emit("file", torrent, file);
-    });
-    if (!found) {
-      fileDownload.emit(
-        "error",
-        new StreamerErr(
-          `${filePath} is not found in the torrent with info hash : ${torrent.infoHash}`,
-          StreamerErrCode.FILE_NOTFOUND
-        )
-      );
-      fileDownload.removeAllListeners();
-      torrent.destroy();
-    }
     torrent.on("error", (err) => {
       if (typeof err === "string") {
-        fileDownload.emit("error", new Error(err));
+        download.emit("error", new Error(err));
 
         return;
       }
-      fileDownload.emit("error", err);
-      torrent.destroy();
+      download.emit("error", err);
     });
 
-    return fileDownload;
+    return download;
   }
-  async stopDownload(id: string) {
-    let fileDownload = this.downloads.get(id);
-    if (!fileDownload) {
+  async downloadTorrent(
+    infoHash: string,
+    opts: WebTorrent.TorrentOptions,
+    cb?: (t: WebTorrent.Torrent) => void,
+  ) {
+    const t = await this.get(infoHash);
+    if (t) {
+      const tmpPath = opts.path || path.join(os.tmpdir(), "./webtorrent");
+      const oldTorrentPath = path.join(t.path, t.name);
+      const newTorrentPath = path.join(opts.path || tmpPath, t.name);
+      if (sameRealPath(oldTorrentPath, newTorrentPath))
+        throw new Error("already downloading");
+      await new Promise<void>((res, rej) =>
+        t.destroy({}, (err) => {
+          if (err) return rej(err);
+          res();
+        }),
+      );
+      fs.cpSync(oldTorrentPath, newTorrentPath, {
+        recursive: true,
+        force: true,
+      });
+      fs.rmSync(oldTorrentPath, { recursive: true, force: true });
+    }
+    this.add(infoHash, opts, (t: WebTorrent.Torrent) => {
+      t.select(0, t.pieces.length - 1);
+      const download = new Download({
+        hash: infoHash,
+        selectedFiles: t.files.map((f) => f.path),
+        path: opts.path,
+      });
+      download.type = "torrent";
+      this.downloads.set(infoHash, download);
+      if (cb) cb(t);
+    });
+  }
+  async stopDownload(hash: string, files?: []) {
+    let download = this.downloads.get(hash);
+    if (!download) {
       throw new StreamerErr(
         "download not found",
-        StreamerErrCode.DOWNLOAD_ID_NOTFOUND
+        StreamerErrCode.DOWNLOAD_NOTFOUND,
       );
     }
-    fileDownload.file?.deselect();
+    const torrent = await this.get(hash);
+    if (!torrent) {
+      throw new StreamerErr(
+        "torrent not found",
+        StreamerErrCode.TORRENT_NOTFOUND,
+      );
+    }
+    files?.forEach((p) => {
+      download.selectedFiles.delete(path.resolve(p));
+    });
+    download.applySelection(torrent);
   }
-  getDownloads(): TorrentFile[] {
+  async getDownloadsFiles(): Promise<TorrentFile[]> {
     let downloads = this.downloads.values().toArray();
     let files: TorrentFile[] = [];
     for (let d of downloads) {
-      if (!d.file) continue;
-      files.push({
-        id: d.id,
-        name: d.file.name,
-        path: d.file.path,
-        size: d.file.length,
-        torrentHash: d.torrent?.infoHash || "",
-        progress: d.downloaded ? 1 : d.file.progress,
-        streamUrl: d.streamUrl,
+      const torrent = await this.get(d.infoHash);
+      if (!torrent) continue;
+      torrent.files.forEach((f) => {
+        if (d.selectedFiles.has(path.resolve(f.path))) {
+          files.push({
+            name: f.name,
+            path: d.path || f.path,
+            size: f.length,
+            torrentHash: d.infoHash,
+            progress: f.progress,
+            streamUrl: d.streamUrl,
+          });
+        }
       });
     }
     return files;
   }
-  getDownloadByPathAndHash(
-    hash: string,
-    path: string
-  ): FileDownload | undefined {
-    let downloads = this.downloads.values().toArray();
-    for (let d of downloads) {
-      if (!d.file || !d.torrent) continue;
-      if (
-        d.file.path === path &&
-        d.torrent.infoHash.toLowerCase() === hash.toLowerCase()
-      ) {
-        return d;
-      }
-    }
-  }
-  streamDownlaod(
-    id: string,
-    res: Response,
-    range?: string,
-    cb?: (fileDownload: FileDownload) => void
-  ): NodeJS.ReadableStream {
-    const download = this.downloads.get(id);
-    if (!download || !download.file) {
-      res.status(404).json({ err: "stream not found" });
-      throw new StreamerErr(
-        "pre stream id not found : " + id,
-        StreamerErrCode.DOWNLOAD_ID_NOTFOUND
-      );
-    }
-    let file = download.file;
-    let fileExt = download.file.name.split(".").pop() || "";
-
-    let contentTypeValue = contentType[fileExt] || "application/octet-stream";
-    let stream: NodeJS.ReadableStream;
-    let start: number;
-    let end: number;
-    if (!range) {
-      start = 0;
-      end = file.length - 1;
-
-      res.writeHead(200, {
-        "Content-Length": file.length,
-        "Content-Type": contentTypeValue,
-        "Content-Disposition": `attachment; filename="${file.name}"`,
-      });
-    } else {
-      const positions = range.replace(/bytes=/, "").split("-");
-      start = parseInt(positions[0], 10);
-      end = positions[1] ? parseInt(positions[1], 10) : file.length - 1;
-
-      const chunkSize = end - start + 1;
-
-      res.writeHead(206, {
-        "Content-Range": `bytes ${start}-${end}/${file.length}`,
-        "Accept-Ranges": "bytes",
-        "Content-Length": chunkSize,
-        "Content-Type": contentTypeValue,
-        "Content-Disposition": `attachment; filename="${file.name}"`,
-      });
-    }
-    stream = file.createReadStream({ start, end });
-    stream.pipe(res);
-    stream.on("error", (err) => {
-      console.error("Stream error:", err);
-      res.end();
-    });
-    if (typeof cb === "function") cb(download);
-    return stream;
-  }
-  streamTo(download: FileDownload, res: Response, range?: string) {
-    let file = download.file;
-    if (!file)
-      throw new StreamerErr(
-        "file is not defined",
-        StreamerErrCode.FILE_NOTFOUND
-      );
-    let fileExt = file.name.split(".").pop() || "";
-
-    let contentTypeValue = contentType[fileExt] || "application/octet-stream";
-    if (!range) {
-      const start = 0;
-      const end = file.length - 1;
-      const stream = file.createReadStream({ start, end });
-
-      res.writeHead(200, {
-        "Content-Length": file.length,
-        "Content-Type": contentTypeValue,
-        "Content-Disposition": `attachment; filename="${file.name}"`,
-      });
-      download.emit("stream", stream);
-      stream.pipe(res);
-      stream.on("error", (err) => {
-        console.error("Stream error:", err);
-        res.end();
-      });
-      return stream;
-    } else {
-      const positions = range.replace(/bytes=/, "").split("-");
-      const start = parseInt(positions[0], 10);
-      const end = positions[1] ? parseInt(positions[1], 10) : file.length - 1;
-
-      const chunkSize = end - start + 1;
-
-      res.writeHead(206, {
-        "Content-Range": `bytes ${start}-${end}/${file.length}`,
-        "Accept-Ranges": "bytes",
-        "Content-Length": chunkSize,
-        "Content-Type": contentTypeValue,
-        "Content-Disposition": `attachment; filename="${file.name}"`,
-      });
-      const stream = file.createReadStream({ start, end });
-      download.emit("stream", stream);
-
-      stream.pipe(res);
-
-      stream.on("error", (err) => {
-        console.error(`Stream error when streaming "${file.name}" :`, err);
-        res.end();
-      });
-      return stream;
-    }
-  }
-  getTorrentFromDownloads(hash: string) {
-    let files = this.downloads.values().toArray();
-    for (let i = 0; i < files.length; i++) {
-      if (
-        files[i].torrent?.infoHash.toUpperCase() === hash.toLocaleUpperCase()
-      ) {
-        return files[i].torrent;
-      }
-    }
-  }
 }
 
-interface FileDownloadEvents {
+interface DownloadEvents {
   file: [torrent: Webtorrent.Torrent, file: WebTorrent.TorrentFile];
   torrent: [torrent: Webtorrent.Torrent];
   stream: [stream: NodeJS.ReadableStream];
@@ -486,67 +393,83 @@ interface FileDownloadEvents {
   done: [];
   destroy: [];
 }
-
-export class FileDownload extends EventEmitter<FileDownloadEvents> {
-  file?: WebTorrent.TorrentFile;
-  torrent?: WebTorrent.Torrent;
-  id: string;
+interface DownloadOpts {
+  hash: string;
+  path?: string;
+  selectedFiles: string[];
+}
+export class Download extends EventEmitter<DownloadEvents> {
+  selectedFiles: Set<string>;
+  infoHash: string;
+  path?: string;
   streamUrl?: string;
   downloaded?: boolean;
-  constructor(
-    id: string,
-    torrent?: WebTorrent.Torrent,
-    file?: Webtorrent.TorrentFile
-  ) {
+  type?: "torrent" | "file";
+  constructor({ hash, selectedFiles, path: torrentPath }: DownloadOpts) {
     super();
-    this.id = id;
-    this.file = file;
-    this.torrent = torrent;
+    this.infoHash = hash;
+    this.selectedFiles = new Set(selectedFiles) ?? new Set();
+    this.path = torrentPath ? path.resolve(torrentPath) : undefined;
   }
-  getFile(): TorrentFile | void {
-    if (!this.file || !this.torrent) return;
-    return {
-      id: this.id,
-      name: this.file.name,
-      path: this.file.path,
-      size: this.file.length,
-      torrentHash: this.torrent?.infoHash,
-      progress: this.file.progress,
-    };
+  applySelection(torrent: WebTorrent.Torrent) {
+    let selectCount = 0;
+    torrent.files.forEach((file) => {
+      if (this.selectedFiles.has(file.path)) {
+        selectCount++;
+        file.select();
+      } else {
+        file.deselect();
+      }
+    });
+    return selectCount;
   }
-  stream(
+
+  selectFile(file: WebTorrent.TorrentFile) {
+    file.select();
+    this.selectedFiles.add(file.path);
+  }
+
+  deselectFile(file: WebTorrent.TorrentFile) {
+    file.deselect();
+    this.selectedFiles.delete(file.path);
+  }
+  pauseFiles(torrent: WebTorrent.Torrent, files?: string[]) {
+    const filesSet = new Set(files || torrent.files.map((f) => f.path));
+    torrent.files.forEach((f) => {
+      if (filesSet.has(f.path)) {
+        f.deselect();
+      }
+    });
+  }
+  streamFile(
     destination: any,
-    cleanup: (download: FileDownload) => void,
-    range?: string
+    file: WebTorrent.TorrentFile,
+    cleanup: (download: Download) => void,
+    range?: string,
   ): NodeJS.ReadableStream {
-    if (!this.file) {
+    if (!file) {
       throw new Error("file is not defined");
     }
     let stream;
     if (!range) {
       const start = 0;
-      const end = this.file.length - 1;
-      stream = this.file.createReadStream({ start, end });
+      const end = file.length - 1;
+      stream = file.createReadStream({ start, end });
     } else {
       const positions = range.replace(/bytes=/, "").split("-");
       const start = parseInt(positions[0], 10);
-      const end = positions[1]
-        ? parseInt(positions[1], 10)
-        : this.file.length - 1;
-      stream = this.file.createReadStream({ start, end });
+      const end = positions[1] ? parseInt(positions[1], 10) : file.length - 1;
+      stream = file.createReadStream({ start, end });
     }
     pipeline(stream, destination, (err: any) => {
       if (err) {
         if (err.message.includes("prematurely")) {
-          console.log(`Client closed stream early for "${this.file?.name}"`);
+          console.log(`Client closed stream early for "${file?.name}"`);
         } else {
-          console.error(
-            `Stream error when streaming "${this.file?.name}":`,
-            err
-          );
+          console.error(`Stream error when streaming "${file?.name}":`, err);
         }
       } else {
-        console.log(`Stream finished successfully for "${this.file?.name}"`);
+        console.log(`Stream finished successfully for "${file?.name}"`);
       }
       cleanup(this);
     });
@@ -558,16 +481,20 @@ export class FileDownload extends EventEmitter<FileDownloadEvents> {
    * If there are no new streams after a certain period of time,
    * the torrent will be destroyed.
    */
-  softDestroy(durationToDestroy: number, cb?: () => void) {
-    if (this.file) {
+  softDestroy(
+    torrent: WebTorrent.Torrent,
+    durationToDestroy: number,
+    cb?: () => void,
+  ) {
+    if (torrent) {
       try {
-        this.file?.deselect();
+        torrent.deselect(0, torrent.pieces.length - 1, 0);
       } catch (err) {
-        console.log("failed to deselect the file : ", err);
+        console.log("failed to deselect the torrent : ", err);
       }
     }
     let destroyTorrentTimeout = setTimeout(() => {
-      this.torrent?.destroy({}, (err) => {
+      torrent.destroy({}, (err) => {
         if (err) {
           console.log("error when destroying torrent : " + err);
           return;
@@ -584,15 +511,18 @@ export class FileDownload extends EventEmitter<FileDownloadEvents> {
       clearTimeout(destroyTorrentTimeout);
     });
   }
-  getStreamMetaData(range?: string): StreamMetadata {
-    let fileExt = this.file?.name.split(".").pop() || "";
+  static getStreamMetaData(
+    file: Webtorrent.TorrentFile,
+    range?: string,
+  ): StreamMetadata {
+    let fileExt = file.name.split(".").pop() || "";
     let contentTypeValue = contentType[fileExt] || "application/octet-stream";
     if (range) {
       const positions = range.replace(/bytes=/, "").split("-");
       const start = parseInt(positions[0], 10);
       const end = positions[1]
         ? parseInt(positions[1], 10)
-        : this.file?.length || 0 - 1;
+        : Math.max(file.length - 1, 0);
 
       const chunkSize = end - start + 1;
       return {
@@ -604,8 +534,8 @@ export class FileDownload extends EventEmitter<FileDownloadEvents> {
     } else {
       return {
         start: 0,
-        end: this.file?.length || 0 - 1,
-        chunkSize: this.file?.length || 0,
+        end: file.length || 0 - 1,
+        chunkSize: file.length || 0,
         contentType: contentTypeValue,
       };
     }
@@ -628,7 +558,7 @@ export class StreamsState {
 
     const interval = setInterval(() => {
       process.stdout.write(
-        "\r" + spinner[i++ % spinner.length] + "fetching torrent : " + hash
+        "\r" + spinner[i++ % spinner.length] + "fetching torrent : " + hash,
       );
     }, 100);
     return (msg) => {

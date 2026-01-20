@@ -10,7 +10,6 @@ export interface TorrentFileMetaData {
 }
 
 export interface TorrentFile {
-  id: string;
   name: string;
   path: string;
   size: number;

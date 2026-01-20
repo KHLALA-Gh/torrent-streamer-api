@@ -28,11 +28,12 @@ export function search(router: Router, config: Partial<HandlerConfig>) {
       res.setHeader("Content-Type", "text/event-stream");
       res.setHeader("Cache-Control", "no-cache");
       res.setHeader("Connection", "keep-alive");
-      const query = agent.add({
+      const query = await agent.add({
         searchQuery: q,
         options: {
           limit: limit,
           concurrency: config.searchConcurrency || 5,
+          fetchTimeOut: 20 * 1000,
         },
       });
 

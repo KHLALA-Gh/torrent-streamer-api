@@ -1,5 +1,6 @@
 import prettyBytes from "pretty-bytes";
 import { State } from "./state.js";
+import path from "path";
 
 type LoggerMode = "stream" | "torrent" | "file";
 
@@ -48,22 +49,30 @@ export class Logger {
           infoHash: t.infoHash,
           files: t.files.length,
         };
-      })
+      }),
     );
   }
   logFiles() {
     if (!this.state.streamer) return;
     this.clear();
     console.log("Files : ");
-    console.table(
-      Array.from(this.state.streamer.downloads.values()).map((f) => {
-        return {
-          name: f.file?.name,
-          size: prettyBytes(f.file?.length || 0),
-          progress: `${((f.file?.progress || 0) * 100).toFixed(2)}%`,
-        };
-      })
-    );
+    const files: any[] = [];
+    this.state.streamer.downloads.values().forEach(async (d, i) => {
+      let t = await this.state.streamer.get(d.infoHash);
+      if (!t) return;
+      t.files.forEach((f) => {
+        if (!d.selectedFiles.has(f.path)) return;
+
+        files.push({
+          name: f.name,
+          size: prettyBytes(f.length),
+          progress: `${(f.progress * 100).toFixed(2)}%`,
+        });
+      });
+      if (i === this.state.streamer.downloads.size - 1) {
+        console.table(files);
+      }
+    });
   }
   logTask(text: string) {
     this.clear();

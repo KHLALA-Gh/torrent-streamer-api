@@ -6,16 +6,17 @@ import { defaultConf, HandlerConfig } from "./types/config.js";
 import { getFiles } from "./routes/inspectFiles.js";
 import { downloadFile } from "./routes/downloadFile.js";
 import { Streamer } from "./lib/streamer.js";
-import {
-  getPreStream,
-  getPreStreams,
-  setPreStream,
-  stopPreStream,
-} from "./routes/preStream.js";
+
 import { status } from "./routes/status.js";
 import { Controllers } from "./index.js";
 import { State } from "./lib/state.js";
 import { verifyState } from "./routes/middleware.js";
+import { downloadTorrent } from "./routes/downloadTorrent.js";
+import {
+  deleteDownload,
+  getDownloads,
+  pauseDownload,
+} from "./routes/downloads.js";
 
 /**
  * The Torrent Streamer Api Handlers
@@ -24,7 +25,7 @@ import { verifyState } from "./routes/middleware.js";
  */
 export function TorrentStreamerApi(
   config?: Partial<HandlerConfig>,
-  controllers?: Controllers
+  controllers?: Controllers,
 ) {
   let c = { ...defaultConf, ...config };
 
@@ -48,10 +49,10 @@ export function TorrentStreamerApi(
   if (c.enableExperimentalMKVStream) {
     experimental_streamMKV(router, c, state);
   }
-  setPreStream(router, c, state);
-  getPreStream(router, c, state);
-  getPreStreams(router, c, state);
-  stopPreStream(router, c, state);
+  getDownloads(router, c, state);
+  deleteDownload(router, c, state);
+  pauseDownload(router, c, state);
   status(router, c, state);
+  downloadTorrent(router, c, state);
   return router;
 }

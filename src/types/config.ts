@@ -1,4 +1,4 @@
-import { FileDownload, Streamer, StreamsState } from "../lib/streamer.js";
+import { Streamer, StreamsState } from "../lib/streamer.js";
 
 export interface HandlerConfig {
   /**  Set a max duration to wait for the engine to be ready. (in ms)
@@ -58,7 +58,8 @@ export interface StreamState {
   ip: string;
   infoHash: string;
   preStream?: boolean;
-  fileDownload: FileDownload;
+  filePath?: string;
+  type?: "torrent" | "file";
 }
 
 export interface State {

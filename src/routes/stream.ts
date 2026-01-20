@@ -33,7 +33,7 @@ export function stream(router: Router, config: HandlerConfig, state: State) {
       }
       const range = req.headers.range;
 
-      const fileDownload = await state.streamer?.streamFile(
+      const { torrent, download } = await state.streamer.streamFile(
         hash,
         res,
         (file) => {
@@ -41,29 +41,18 @@ export function stream(router: Router, config: HandlerConfig, state: State) {
             return true;
           return false;
         },
-        (fileDownload) => {
+        (download) => {
           state.removeStream(id);
-          if (!state.openStreams?.getIpStreamCount(ip)) {
-            fileDownload.softDestroy(config.destroyTorrentTimeout, () => {
-              state.streamer?.downloads.delete(fileDownload.id);
-            });
-          }
         },
-        range
+        range,
       );
-      if (!fileDownload) return;
+      if (!torrent) return;
       state.setStream(id, {
         ip,
         infoHash: hash,
-        fileDownload,
       });
       res.on("close", () => {
         state.removeStream(id);
-        if (!state.openStreams?.getIpStreamCount(ip)) {
-          fileDownload.softDestroy(config.destroyTorrentTimeout, () => {
-            state.streamer?.downloads.delete(fileDownload.id);
-          });
-        }
       });
     } catch (err) {
       res.status(500).json({
@@ -76,7 +65,7 @@ export function stream(router: Router, config: HandlerConfig, state: State) {
 export function experimental_streamMKV(
   router: Router,
   config: HandlerConfig,
-  state: State
+  state: State,
 ) {
   router.get("/api/exp-stream-mkv", async (req, res) => {
     try {
@@ -107,28 +96,25 @@ export function experimental_streamMKV(
         return;
       }
 
-      const fileDownload = await state.streamer?.experimental_streamMKV(
+      const resp = await state.streamer?.experimental_streamMKV(
         magnetURI,
         res,
         decodeToUTF8(filePath64),
         (file) => {
           state.setStream(id, {
             ip,
-            infoHash: file.torrent?.infoHash || "",
-            fileDownload: file,
+            infoHash: magnetURI,
+            filePath: file.path,
           });
           console.clear();
           console.table(state.openStreams?.ipOpenStreamsTable());
           return !res.headersSent;
-        }
+        },
       );
       req.on("close", () => {
         state.removeStream(id);
         console.clear();
         console.table(state.openStreams?.ipOpenStreamsTable());
-        fileDownload?.softDestroy(config.destroyTorrentTimeout, () => {
-          console.log("experimental_stream_mkv : torrent destroyed");
-        });
       });
     } catch (err) {
       res.status(500).json({

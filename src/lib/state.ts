@@ -18,7 +18,7 @@ export class State extends EventEmitter<StateEvents> implements StateProps {
   destroyed?: boolean;
   openStreams: StreamsState | null;
   cache: Cache | null;
-  streamer: Streamer | null;
+  streamer: Streamer;
   logger?: Logger | null;
   config: HandlerConfig;
   keyPress?: KeyPress | null;
@@ -60,7 +60,6 @@ export class State extends EventEmitter<StateEvents> implements StateProps {
   destroy(callback?: (err: string | Error) => void) {
     this.removeAllListeners();
     this.streamer?.destroyStreamer((err) => {
-      this.streamer = null;
       if (callback) callback(err);
     });
     this.openStreams?.openStreams.clear();
