@@ -36,6 +36,12 @@ export function downloadFile(
         path,
         (fileDownload) => {
           state.openStreams?.removeStreamAndLog(streamID);
+          if (
+            !state.openStreams?.getTorrentCount(hash) &&
+            download.type === "stream"
+          ) {
+            download.pauseFiles(torrent);
+          }
         },
         range,
       );
@@ -54,9 +60,14 @@ export function downloadFile(
           res.status(400).json({ error: "Invalid file path" });
           return;
         }
+        if (err.code === StreamerErrCode.TORRENT_STOPPED) {
+          res.status(400).json({ error: "Torrent stopped" });
+          return;
+        }
         res.status(500).json({ error: "unexpected streaming error" });
         return;
       }
+
       res.status(500).json({
         error: "Internal Server Error",
       });

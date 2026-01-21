@@ -1,3 +1,5 @@
+import { DownloadFile } from "../lib/streamer";
+
 export interface TorrentFileMetaData {
   name: string;
   path: string;
@@ -26,4 +28,22 @@ export interface Stream {
   size: number;
   hash: string;
   preStream?: boolean;
+}
+export interface File extends DownloadFile {
+  path: string;
+  progress: number;
+}
+export interface TorrentDownload {
+  name: string;
+  infoHash: string;
+  files: File[];
+  path: string;
+  progress: number;
+  upSpeed: number;
+  downSpeed: number;
+  paused: boolean;
+  downloadSize: number;
+  totalSize: number;
+  downloaded: number;
+  stopped: boolean;
 }

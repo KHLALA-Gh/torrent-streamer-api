@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { HandlerConfig } from "../types/config.js";
 import { State } from "../lib/state.js";
+import { TorrentDownload } from "../types/torrent.js";
 
 export function getDownloads(
   router: Router,
@@ -10,18 +11,31 @@ export function getDownloads(
   router.get("/api/downloads", async (req, res) => {
     try {
       const downloads = Array.from(state.streamer.downloads.values());
-      const resp = [];
+      const resp: TorrentDownload[] = [];
       for (let d of downloads) {
         const t = await state.streamer.get(d.infoHash);
         if (!t) continue;
+        let downloadSize = 0;
+        t.files.forEach((f) => {
+          const has =
+            d.files.get(f.path)?.selected || d.files.get(f.path)?.streamed;
+          if (has) {
+            downloadSize += f.length;
+          }
+        });
         resp.push({
           name: t.name,
           infoHash: d.infoHash,
-          selectedFiles: Array.from(d.selectedFiles),
           path: d.path,
           progress: t.progress,
           upSpeed: t.uploadSpeed,
           downSpeed: t.downloadSpeed,
+          paused: d.isPaused(),
+          files: d.getFiles(t),
+          downloadSize,
+          totalSize: t.length,
+          downloaded: t.downloaded,
+          stopped: d.stopped,
         });
       }
       res.status(200).json(resp);
@@ -39,18 +53,14 @@ export function pauseDownload(
 ) {
   router.put("/api/downloads", async (req, res) => {
     try {
-      const hash = req.body.hash;
-      if (!hash) {
+      const hash: string = req.body.hash;
+      if (!hash || typeof hash !== "string") {
         res.status(400).json({
           err: "hash is required",
         });
         return;
       }
-      let files = req.body.files;
-      if (!(files instanceof Array)) {
-        files = undefined;
-      }
-      const download = state.streamer.downloads.get(hash);
+      const download = state.streamer.getDownload(hash);
       if (!download) {
         res.status(404).json({
           err: "download not found",
@@ -64,9 +74,23 @@ export function pauseDownload(
         });
         return;
       }
-      download.pauseFiles(t, files);
+      const stop = req.body.stop;
+      if (stop === true) {
+        download.stop(t);
+        state.openStreams?.removeStreamsWithHash(hash);
+
+        res.sendStatus(200);
+        return;
+      }
+      if (download.isPaused()) {
+        download.resume(t);
+      } else {
+        download.pauseFiles(t);
+      }
       res.sendStatus(200);
     } catch (err) {
+      console.log(err);
+
       res.status(500).json({
         err: "server error",
       });
@@ -82,8 +106,7 @@ export function deleteDownload(
   router.delete("/api/downloads/:hash", async (req, res) => {
     try {
       const hash = req.params.hash;
-
-      const download = state.streamer.downloads.get(hash);
+      const download = state.streamer.getDownload(hash);
       if (!download) {
         res.status(404).json({
           err: "download not found",
@@ -99,6 +122,7 @@ export function deleteDownload(
       }
       download.pauseFiles(t);
       t.destroy();
+      state.streamer.downloads.delete(hash);
       res.sendStatus(200);
     } catch (err) {
       res.status(500).json({

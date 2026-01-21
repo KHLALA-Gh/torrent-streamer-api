@@ -61,7 +61,7 @@ export class Logger {
       let t = await this.state.streamer.get(d.infoHash);
       if (!t) return;
       t.files.forEach((f) => {
-        if (!d.selectedFiles.has(f.path)) return;
+        if (!d.files.get(f.path)?.selected) return;
 
         files.push({
           name: f.name,

@@ -3,7 +3,7 @@ import WebTorrent from "webtorrent";
 import Webtorrent from "webtorrent";
 import { StreamState } from "../types/config.js";
 import ffmpeg from "fluent-ffmpeg";
-import { TorrentFile } from "../types/torrent.js";
+import { File, TorrentFile } from "../types/torrent.js";
 import EventEmitter from "events";
 import { createMagnetLink } from "../routes/magnet.js";
 import { trackers, wsTrackers } from "../trackers.js";
@@ -15,6 +15,7 @@ export enum StreamerErrCode {
   "FILE_NOTFOUND",
   "DOWNLOAD_NOTFOUND",
   "TORRENT_NOTFOUND",
+  "TORRENT_STOPPED",
 }
 import fs from "fs";
 import os from "os";
@@ -47,6 +48,7 @@ function sameRealPath(a: string, b: string) {
 }
 export class Streamer extends Webtorrent {
   public downloads: Map<string, Download>;
+  public defaultTorrentPath: string = path.join(os.tmpdir(), "./homecinema");
   constructor() {
     super();
     this.downloads = new Map();
@@ -82,7 +84,10 @@ export class Streamer extends Webtorrent {
     torrent = await new Promise<WebTorrent.Torrent>((res, rej) => {
       torrent = this.add(
         createMagnetLink(hash, trackers, wsTrackers),
-        opts,
+        {
+          ...opts,
+          path: opts?.path || this.defaultTorrentPath,
+        },
         (torrent) => {
           torrent.files.forEach((file) => file.deselect());
         },
@@ -96,6 +101,16 @@ export class Streamer extends Webtorrent {
     });
 
     return torrent;
+  }
+  saveDownload(d: Download) {
+    d.infoHash = d.infoHash.toLowerCase();
+    this.downloads.set(d.infoHash, d);
+  }
+  getDownload(hash: string) {
+    return (
+      this.downloads.get(hash.toLowerCase()) ||
+      this.downloads.get(hash.toUpperCase())
+    );
   }
   /**@deprecated */
   stream(
@@ -210,12 +225,17 @@ export class Streamer extends Webtorrent {
       });
       throw new StreamerErr("file not found", StreamerErrCode.FILE_NOTFOUND);
     }
-    let download = this.downloads.get(hash);
+    let download = this.getDownload(hash);
+    if (download?.stopped) {
+      throw new StreamerErr("torrent stopped", StreamerErrCode.TORRENT_STOPPED);
+    }
     if (!download) {
-      download = new Download({ hash, selectedFiles: [file.path] });
-      this.downloads.set(hash, download);
+      download = new Download(torrent, {
+        selectedFiles: [file.path],
+      });
+      this.saveDownload(download);
       this.emit("download", download);
-      download.selectFile(file);
+      download.applySelection(torrent);
     }
     console.log("found : " + file.name);
     if (res.headersSent) throw new Error("response already sent");
@@ -247,7 +267,9 @@ export class Streamer extends Webtorrent {
       });
       return;
     }
-    let download = new Download({ hash, selectedFiles: [file.path] });
+    let download = new Download(torrent, {
+      selectedFiles: [file.path],
+    });
     if (typeof callback === "function") {
       let cont = callback(download);
       if (!cont) return;
@@ -275,8 +297,10 @@ export class Streamer extends Webtorrent {
     downloadPath: string,
   ): Promise<Download> {
     let torrent = await this.getTorrent(hash, { path: downloadPath });
-    const download = new Download({ hash, selectedFiles: [filePath] });
-    this.downloads.set(hash, download);
+    const download = new Download(torrent, {
+      selectedFiles: [filePath],
+    });
+    this.saveDownload(download);
     this.emit("download", download);
     download.emit("torrent", torrent);
 
@@ -307,15 +331,24 @@ export class Streamer extends Webtorrent {
     return download;
   }
   async downloadTorrent(
-    infoHash: string,
-    opts: WebTorrent.TorrentOptions,
+    {
+      infoHash,
+      opts,
+      files,
+    }: {
+      infoHash: string;
+      opts: WebTorrent.TorrentOptions;
+      files?: string[];
+    },
     cb?: (t: WebTorrent.Torrent) => void,
   ) {
     const t = await this.get(infoHash);
     if (t) {
-      const tmpPath = opts.path || path.join(os.tmpdir(), "./webtorrent");
       const oldTorrentPath = path.join(t.path, t.name);
-      const newTorrentPath = path.join(opts.path || tmpPath, t.name);
+      const newTorrentPath = path.join(
+        opts.path || this.defaultTorrentPath,
+        t.name,
+      );
       if (sameRealPath(oldTorrentPath, newTorrentPath))
         throw new Error("already downloading");
       await new Promise<void>((res, rej) =>
@@ -331,19 +364,17 @@ export class Streamer extends Webtorrent {
       fs.rmSync(oldTorrentPath, { recursive: true, force: true });
     }
     this.add(infoHash, opts, (t: WebTorrent.Torrent) => {
-      t.select(0, t.pieces.length - 1);
-      const download = new Download({
-        hash: infoHash,
-        selectedFiles: t.files.map((f) => f.path),
-        path: opts.path,
+      const download = new Download(t, {
+        selectedFiles: files || t.files.map((f) => f.path),
       });
+      download.applySelection(t);
       download.type = "torrent";
-      this.downloads.set(infoHash, download);
+      this.saveDownload(download);
       if (cb) cb(t);
     });
   }
-  async stopDownload(hash: string, files?: []) {
-    let download = this.downloads.get(hash);
+  async stopDownload(hash: string, files?: string[]) {
+    let download = this.getDownload(hash);
     if (!download) {
       throw new StreamerErr(
         "download not found",
@@ -357,10 +388,7 @@ export class Streamer extends Webtorrent {
         StreamerErrCode.TORRENT_NOTFOUND,
       );
     }
-    files?.forEach((p) => {
-      download.selectedFiles.delete(path.resolve(p));
-    });
-    download.applySelection(torrent);
+    download.pauseFiles(torrent, files);
   }
   async getDownloadsFiles(): Promise<TorrentFile[]> {
     let downloads = this.downloads.values().toArray();
@@ -369,7 +397,7 @@ export class Streamer extends Webtorrent {
       const torrent = await this.get(d.infoHash);
       if (!torrent) continue;
       torrent.files.forEach((f) => {
-        if (d.selectedFiles.has(path.resolve(f.path))) {
+        if (d.files.has(f.path)) {
           files.push({
             name: f.name,
             path: d.path || f.path,
@@ -393,28 +421,92 @@ interface DownloadEvents {
   done: [];
   destroy: [];
 }
-interface DownloadOpts {
-  hash: string;
-  path?: string;
+export type downloadType = "torrent" | "stream";
+export interface DownloadOpts {
   selectedFiles: string[];
+  type?: downloadType;
+}
+export interface DownloadFile {
+  selected: boolean;
+  paused: boolean;
+  streamed: boolean;
 }
 export class Download extends EventEmitter<DownloadEvents> {
-  selectedFiles: Set<string>;
+  files: Map<string, DownloadFile>;
   infoHash: string;
-  path?: string;
+  path: string;
   streamUrl?: string;
   downloaded?: boolean;
-  type?: "torrent" | "file";
-  constructor({ hash, selectedFiles, path: torrentPath }: DownloadOpts) {
+  type: downloadType;
+  stopped: boolean;
+  constructor(
+    torrent: Webtorrent.Torrent,
+    { selectedFiles, type }: DownloadOpts,
+  ) {
     super();
-    this.infoHash = hash;
-    this.selectedFiles = new Set(selectedFiles) ?? new Set();
-    this.path = torrentPath ? path.resolve(torrentPath) : undefined;
+    this.infoHash = torrent.infoHash;
+    const selectedF = new Set(selectedFiles);
+    this.files = new Map(
+      torrent.files.map((f) => {
+        return [
+          f.path,
+          {
+            selected: selectedF.has(f.path),
+            paused: false,
+            streamed: false,
+          },
+        ];
+      }),
+    );
+    this.path = path.resolve(torrent.path);
+    this.type = type || "stream";
+    this.stopped = false;
+  }
+  isPaused(): boolean {
+    for (let f of this.files.values()) {
+      if (!f.paused || f.streamed) return false;
+    }
+    return true;
+  }
+  isDeselected(): boolean {
+    for (let f of this.files.values()) {
+      if (f.selected || f.streamed) return false;
+    }
+    return true;
+  }
+  getFiles(torrent: WebTorrent.Torrent): File[] {
+    let files: File[] = [];
+    for (let f of torrent.files) {
+      const file = this.files.get(f.path);
+      if (file) {
+        files.push({
+          ...file,
+          path: f.path,
+          progress: f.progress,
+        });
+      }
+    }
+    return files;
+  }
+  /**
+   * pauses all files and stop streams
+   */
+  stop(torrent: WebTorrent.Torrent) {
+    this.pauseFiles(torrent);
+    this.files.forEach((f, hash) => {
+      this.files.set(hash, {
+        ...f,
+        streamed: false,
+      });
+    });
+    this.emit("stop");
+    this.stopped = true;
   }
   applySelection(torrent: WebTorrent.Torrent) {
+    if (this.stopped) throw new Error("download is stopped");
     let selectCount = 0;
     torrent.files.forEach((file) => {
-      if (this.selectedFiles.has(file.path)) {
+      if (this.files.get(file.path)?.selected) {
         selectCount++;
         file.select();
       } else {
@@ -425,21 +517,55 @@ export class Download extends EventEmitter<DownloadEvents> {
   }
 
   selectFile(file: WebTorrent.TorrentFile) {
+    if (this.stopped) throw new Error("download is stopped");
+    if (!this.files.has(file.path)) return;
     file.select();
-    this.selectedFiles.add(file.path);
+    this.files.set(file.path, {
+      selected: true,
+      paused: false,
+      streamed: this.files.get(file.path)?.streamed || false,
+    });
   }
 
   deselectFile(file: WebTorrent.TorrentFile) {
+    if (!this.files.has(file.path)) return;
+
     file.deselect();
-    this.selectedFiles.delete(file.path);
+    this.files.set(file.path, {
+      selected: false,
+      paused: this.files.get(file.path)?.paused || false,
+      streamed: this.files.get(file.path)?.streamed || false,
+    });
   }
   pauseFiles(torrent: WebTorrent.Torrent, files?: string[]) {
-    const filesSet = new Set(files || torrent.files.map((f) => f.path));
+    const filesSet = files ? new Set(files) : this.files;
     torrent.files.forEach((f) => {
-      if (filesSet.has(f.path)) {
+      if (filesSet.has(f.path) && this.files.has(f.path)) {
         f.deselect();
+        console.log("deselected :", f.name);
+        this.files.set(f.path, {
+          paused: true,
+          selected: this.files.get(f.path)?.selected || false,
+          streamed: this.files.get(f.path)?.streamed || false,
+        });
       }
     });
+  }
+  resume(torrent: WebTorrent.Torrent, files?: string[]) {
+    const filesSet = files ? new Set(files) : this.files;
+    torrent.files.forEach((f) => {
+      if (filesSet.has(f.path) && this.files.get(f.path)?.selected) {
+        f.select();
+        console.log("selected :", f.name);
+
+        this.files.set(f.path, {
+          paused: false,
+          selected: this.files.get(f.path)?.selected || false,
+          streamed: this.files.get(f.path)?.streamed || false,
+        });
+      }
+    });
+    this.stopped = false;
   }
   streamFile(
     destination: any,
@@ -471,7 +597,27 @@ export class Download extends EventEmitter<DownloadEvents> {
       } else {
         console.log(`Stream finished successfully for "${file?.name}"`);
       }
+      if (this.files.has(file.path)) {
+        this.files.set(file.path, {
+          paused: false,
+          selected: this.files.get(file.path)?.selected || false,
+          streamed: false,
+        });
+      }
       cleanup(this);
+    });
+    if (this.files.has(file.path)) {
+      this.files.set(file.path, {
+        paused: false,
+        selected: this.files.get(file.path)?.selected || false,
+        streamed: true,
+      });
+    }
+    this.once("stop", () => {
+      //@ts-ignore
+      stream.destroy();
+      file.deselect();
+      stream.removeAllListeners();
     });
     this.emit("stream", stream);
     return stream;
@@ -581,6 +727,15 @@ export class StreamsState {
   }
   removeStreamAndLog(id: string) {
     this.removeStream(id);
+    console.clear();
+    console.table(this.ipOpenStreamsTable());
+  }
+  removeStreamsWithHash(hash: string) {
+    this.openStreams.forEach((s, id) => {
+      if (s.infoHash.toLowerCase() === hash.toLowerCase()) {
+        this.openStreams.delete(id);
+      }
+    });
     console.clear();
     console.table(this.ipOpenStreamsTable());
   }
