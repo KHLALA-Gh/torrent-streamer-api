@@ -1,4 +1,4 @@
-import { DownloadFile } from "../lib/streamer";
+import { DownloadFile, DownloadStatus } from "../lib/streamer";
 
 export interface TorrentFileMetaData {
   name: string;
@@ -46,4 +46,5 @@ export interface TorrentDownload {
   totalSize: number;
   downloaded: number;
   stopped: boolean;
+  status: DownloadStatus;
 }

@@ -16,6 +16,7 @@ import {
   deleteDownload,
   getDownloads,
   pauseDownload,
+  setDownloads,
 } from "./routes/downloads.js";
 
 /**
@@ -54,5 +55,6 @@ export function TorrentStreamerApi(
   pauseDownload(router, c, state);
   status(router, c, state);
   downloadTorrent(router, c, state);
+  setDownloads(router, c, state);
   return router;
 }

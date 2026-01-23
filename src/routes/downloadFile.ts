@@ -35,9 +35,10 @@ export function downloadFile(
         res,
         path,
         (fileDownload) => {
+          console.log("waaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
           state.openStreams?.removeStreamAndLog(streamID);
           if (
-            !state.openStreams?.getTorrentCount(hash) &&
+            !state.openStreams?.getTorrentCount(torrent.infoHash) &&
             download.type === "stream"
           ) {
             download.pauseFiles(torrent);

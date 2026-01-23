@@ -7,7 +7,6 @@ import { File, TorrentFile } from "../types/torrent.js";
 import EventEmitter from "events";
 import { createMagnetLink } from "../routes/magnet.js";
 import { trackers, wsTrackers } from "../trackers.js";
-import { randomUUID } from "crypto";
 import { pipeline } from "stream";
 export enum StreamerErrCode {
   "MP4FILE_NOTFOUND",
@@ -69,18 +68,32 @@ export class Streamer extends Webtorrent {
     opts?: WebTorrent.TorrentOptions,
   ): Promise<WebTorrent.Torrent> {
     let torrent = await this.get(hash);
+    let download = new Download({
+      infoHash: hash,
+      selectedFiles: [],
+      status: "setting",
+      torrent: undefined,
+    });
+    if (!torrent) {
+      this.saveDownload(download);
+    }
     if (torrent && !torrent.name) {
       torrent = await new Promise<WebTorrent.Torrent>((res, rej) => {
         if (!torrent) return rej("torrent is undefined");
         torrent.once("ready", () => {
-          if (!torrent) return rej();
+          if (!torrent) {
+            download.status = "error";
+            return rej();
+          }
 
           res(torrent);
         });
         torrent.once("error", (err) => rej(err));
       });
     }
-    if (torrent && torrent.name) return torrent;
+    if (torrent && torrent.name) {
+      return torrent;
+    }
     torrent = await new Promise<WebTorrent.Torrent>((res, rej) => {
       torrent = this.add(
         createMagnetLink(hash, trackers, wsTrackers),
@@ -90,6 +103,7 @@ export class Streamer extends Webtorrent {
         },
         (torrent) => {
           torrent.files.forEach((file) => file.deselect());
+          this.deleteDownload(download.infoHash);
         },
       );
       torrent.once("ready", () => {
@@ -97,7 +111,9 @@ export class Streamer extends Webtorrent {
 
         res(torrent);
       });
-      torrent.once("error", (err) => rej(err));
+      torrent.once("error", (err) => {
+        rej(err);
+      });
     });
 
     return torrent;
@@ -110,6 +126,12 @@ export class Streamer extends Webtorrent {
     return (
       this.downloads.get(hash.toLowerCase()) ||
       this.downloads.get(hash.toUpperCase())
+    );
+  }
+  deleteDownload(hash: string) {
+    return (
+      this.downloads.delete(hash.toLowerCase()) ||
+      this.downloads.delete(hash.toUpperCase())
     );
   }
   /**@deprecated */
@@ -230,8 +252,11 @@ export class Streamer extends Webtorrent {
       throw new StreamerErr("torrent stopped", StreamerErrCode.TORRENT_STOPPED);
     }
     if (!download) {
-      download = new Download(torrent, {
+      download = new Download({
         selectedFiles: [file.path],
+        status: "setted",
+        infoHash: torrent.infoHash,
+        torrent,
       });
       this.saveDownload(download);
       this.emit("download", download);
@@ -267,8 +292,11 @@ export class Streamer extends Webtorrent {
       });
       return;
     }
-    let download = new Download(torrent, {
+    let download = new Download({
       selectedFiles: [file.path],
+      status: "setted",
+      infoHash: torrent.infoHash,
+      torrent,
     });
     if (typeof callback === "function") {
       let cont = callback(download);
@@ -297,8 +325,11 @@ export class Streamer extends Webtorrent {
     downloadPath: string,
   ): Promise<Download> {
     let torrent = await this.getTorrent(hash, { path: downloadPath });
-    const download = new Download(torrent, {
+    const download = new Download({
       selectedFiles: [filePath],
+      status: "setting",
+      infoHash: torrent.infoHash,
+      torrent,
     });
     this.saveDownload(download);
     this.emit("download", download);
@@ -335,13 +366,25 @@ export class Streamer extends Webtorrent {
       infoHash,
       opts,
       files,
+      stopped,
+      paused,
     }: {
       infoHash: string;
       opts: WebTorrent.TorrentOptions;
       files?: string[];
+      stopped?: boolean;
+      paused?: boolean;
     },
     cb?: (t: WebTorrent.Torrent) => void,
   ) {
+    const d = new Download({
+      selectedFiles: [],
+      infoHash: infoHash,
+      status: "setting",
+      type: "torrent",
+      torrent: undefined,
+    });
+    this.saveDownload(d);
     const t = await this.get(infoHash);
     if (t) {
       const oldTorrentPath = path.join(t.path, t.name);
@@ -363,14 +406,32 @@ export class Streamer extends Webtorrent {
       });
       fs.rmSync(oldTorrentPath, { recursive: true, force: true });
     }
-    this.add(infoHash, opts, (t: WebTorrent.Torrent) => {
-      const download = new Download(t, {
+    let torrent = this.add(infoHash, opts, (t: WebTorrent.Torrent) => {
+      const download = new Download({
         selectedFiles: files || t.files.map((f) => f.path),
+        status: "setted",
+        infoHash: t.infoHash,
+        torrent,
       });
-      download.applySelection(t);
+      if (stopped) {
+        download.stop(t);
+      } else if (paused) {
+        download.pauseFiles(t);
+      } else {
+        download.applySelection(t);
+      }
       download.type = "torrent";
       this.saveDownload(download);
       if (cb) cb(t);
+    });
+    torrent.on("error", (err) => {
+      const download = new Download({
+        selectedFiles: [],
+        status: "error",
+        infoHash: infoHash,
+        torrent: undefined,
+      });
+      this.saveDownload(download);
     });
   }
   async stopDownload(hash: string, files?: string[]) {
@@ -422,9 +483,13 @@ interface DownloadEvents {
   destroy: [];
 }
 export type downloadType = "torrent" | "stream";
-export interface DownloadOpts {
+export type DownloadStatus = "setted" | "setting" | "error";
+export interface DownloadOpts<S extends DownloadStatus> {
   selectedFiles: string[];
   type?: downloadType;
+  status: S;
+  torrent: S extends "setted" ? Webtorrent.Torrent : undefined;
+  infoHash: string;
 }
 export interface DownloadFile {
   selected: boolean;
@@ -439,26 +504,40 @@ export class Download extends EventEmitter<DownloadEvents> {
   downloaded?: boolean;
   type: downloadType;
   stopped: boolean;
-  constructor(
-    torrent: Webtorrent.Torrent,
-    { selectedFiles, type }: DownloadOpts,
-  ) {
+  status: DownloadStatus;
+  constructor({
+    selectedFiles,
+    type,
+    torrent,
+    infoHash,
+    status,
+  }: DownloadOpts<DownloadStatus>) {
     super();
-    this.infoHash = torrent.infoHash;
+    this.infoHash = infoHash;
     const selectedF = new Set(selectedFiles);
-    this.files = new Map(
-      torrent.files.map((f) => {
-        return [
-          f.path,
-          {
-            selected: selectedF.has(f.path),
-            paused: false,
-            streamed: false,
-          },
-        ];
-      }),
-    );
-    this.path = path.resolve(torrent.path);
+
+    if (!torrent) {
+      if (status === "setted") throw new Error("setted without torrent");
+      this.status = status || "setting";
+      this.files = new Map();
+      this.path = "";
+    } else {
+      this.path = path.resolve(torrent.path);
+      this.status = status || "setted";
+      this.files = new Map(
+        torrent.files.map((f) => {
+          return [
+            f.path,
+            {
+              selected: selectedF.has(f.path),
+              paused: false,
+              streamed: false,
+            },
+          ];
+        }),
+      );
+    }
+
     this.type = type || "stream";
     this.stopped = false;
   }
@@ -616,7 +695,7 @@ export class Download extends EventEmitter<DownloadEvents> {
     this.once("stop", () => {
       //@ts-ignore
       stream.destroy();
-      file.deselect();
+      if (!this.files.get(file.path)?.selected) file.deselect();
       stream.removeAllListeners();
     });
     this.emit("stream", stream);

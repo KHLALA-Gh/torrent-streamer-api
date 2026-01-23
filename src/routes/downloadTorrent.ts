@@ -62,6 +62,7 @@ export function downloadTorrent(
             totalSize: t.length,
             downloaded: t.downloaded,
             stopped: false,
+            status: d?.status || "setted",
           };
           res.status(200).json(resp);
         },
