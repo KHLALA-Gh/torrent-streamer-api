@@ -32,6 +32,8 @@ export interface Stream {
 export interface File extends DownloadFile {
   path: string;
   progress: number;
+  size: number;
+  downloaded: number;
 }
 export interface TorrentDownload {
   name: string;
@@ -47,4 +49,5 @@ export interface TorrentDownload {
   downloaded: number;
   stopped: boolean;
   status: DownloadStatus;
+  idling: boolean;
 }

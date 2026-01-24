@@ -35,6 +35,7 @@ export function getDownloads(
           upSpeed: t.uploadSpeed,
           downSpeed: t.downloadSpeed,
           paused: d.isPaused(),
+          idling: d.isIdling(),
           files,
           downloadSize,
           totalSize: t.length,
@@ -148,7 +149,13 @@ export function pauseDownload(
         res.sendStatus(200);
         return;
       }
-      if (download.isPaused()) {
+      if (download.isIdling()) {
+        res.status(400).json({
+          err: "torrent is idling",
+        });
+        return;
+      }
+      if (download.isPaused() || download.stopped) {
         download.resume(t);
       } else {
         download.pauseFiles(t);

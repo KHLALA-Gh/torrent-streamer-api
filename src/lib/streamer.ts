@@ -253,7 +253,7 @@ export class Streamer extends Webtorrent {
     }
     if (!download) {
       download = new Download({
-        selectedFiles: [file.path],
+        selectedFiles: [],
         status: "setted",
         infoHash: torrent.infoHash,
         torrent,
@@ -377,14 +377,6 @@ export class Streamer extends Webtorrent {
     },
     cb?: (t: WebTorrent.Torrent) => void,
   ) {
-    const d = new Download({
-      selectedFiles: [],
-      infoHash: infoHash,
-      status: "setting",
-      type: "torrent",
-      torrent: undefined,
-    });
-    this.saveDownload(d);
     const t = await this.get(infoHash);
     if (t) {
       const oldTorrentPath = path.join(t.path, t.name);
@@ -406,6 +398,14 @@ export class Streamer extends Webtorrent {
       });
       fs.rmSync(oldTorrentPath, { recursive: true, force: true });
     }
+    const d = new Download({
+      selectedFiles: [],
+      infoHash: infoHash,
+      status: "setting",
+      type: "torrent",
+      torrent: undefined,
+    });
+    this.saveDownload(d);
     let torrent = this.add(infoHash, opts, (t: WebTorrent.Torrent) => {
       const download = new Download({
         selectedFiles: files || t.files.map((f) => f.path),
@@ -477,7 +477,7 @@ export class Streamer extends Webtorrent {
 interface DownloadEvents {
   file: [torrent: Webtorrent.Torrent, file: WebTorrent.TorrentFile];
   torrent: [torrent: Webtorrent.Torrent];
-  stream: [stream: NodeJS.ReadableStream];
+  stream: [stream: NodeJS.ReadableStream, file: WebTorrent.TorrentFile];
   error: [err: Error];
   done: [];
   destroy: [];
@@ -543,7 +543,14 @@ export class Download extends EventEmitter<DownloadEvents> {
   }
   isPaused(): boolean {
     for (let f of this.files.values()) {
-      if (!f.paused || f.streamed) return false;
+      if (!f.paused) return false;
+    }
+    return true;
+  }
+  isIdling(): boolean {
+    if (this.stopped) return false;
+    for (let f of this.files.values()) {
+      if (f.selected || f.streamed) return false;
     }
     return true;
   }
@@ -562,6 +569,8 @@ export class Download extends EventEmitter<DownloadEvents> {
           ...file,
           path: f.path,
           progress: f.progress,
+          size: f.length,
+          downloaded: f.downloaded,
         });
       }
     }
@@ -588,6 +597,7 @@ export class Download extends EventEmitter<DownloadEvents> {
       if (this.files.get(file.path)?.selected) {
         selectCount++;
         file.select();
+        console.log("selected " + file.name);
       } else {
         file.deselect();
       }
@@ -619,9 +629,11 @@ export class Download extends EventEmitter<DownloadEvents> {
   pauseFiles(torrent: WebTorrent.Torrent, files?: string[]) {
     const filesSet = files ? new Set(files) : this.files;
     torrent.files.forEach((f) => {
+      const file = this.files.get(f.path);
       if (filesSet.has(f.path) && this.files.has(f.path)) {
-        f.deselect();
-        console.log("deselected :", f.name);
+        if (!file?.streamed) {
+          f.deselect();
+        }
         this.files.set(f.path, {
           paused: true,
           selected: this.files.get(f.path)?.selected || false,
@@ -633,14 +645,17 @@ export class Download extends EventEmitter<DownloadEvents> {
   resume(torrent: WebTorrent.Torrent, files?: string[]) {
     const filesSet = files ? new Set(files) : this.files;
     torrent.files.forEach((f) => {
-      if (filesSet.has(f.path) && this.files.get(f.path)?.selected) {
-        f.select();
-        console.log("selected :", f.name);
+      if (filesSet.has(f.path) && this.files.has(f.path)) {
+        const file = this.files.get(f.path);
+
+        if (file?.selected) {
+          f.select();
+        }
 
         this.files.set(f.path, {
           paused: false,
-          selected: this.files.get(f.path)?.selected || false,
-          streamed: this.files.get(f.path)?.streamed || false,
+          selected: file?.selected || false,
+          streamed: file?.streamed || false,
         });
       }
     });
@@ -676,18 +691,11 @@ export class Download extends EventEmitter<DownloadEvents> {
       } else {
         console.log(`Stream finished successfully for "${file?.name}"`);
       }
-      if (this.files.has(file.path)) {
-        this.files.set(file.path, {
-          paused: false,
-          selected: this.files.get(file.path)?.selected || false,
-          streamed: false,
-        });
-      }
       cleanup(this);
     });
     if (this.files.has(file.path)) {
       this.files.set(file.path, {
-        paused: false,
+        paused: this.files.get(file.path)?.paused || false,
         selected: this.files.get(file.path)?.selected || false,
         streamed: true,
       });
@@ -698,7 +706,7 @@ export class Download extends EventEmitter<DownloadEvents> {
       if (!this.files.get(file.path)?.selected) file.deselect();
       stream.removeAllListeners();
     });
-    this.emit("stream", stream);
+    this.emit("stream", stream, file);
     return stream;
   }
   /**
@@ -792,6 +800,17 @@ export class StreamsState {
         process.stdout.write(`\r${msg}\n`);
       }
     };
+  }
+  getFileStreamCount(hash: string, path: string) {
+    let count = 0;
+    this.openStreams.forEach((s) => {
+      if (
+        s.infoHash.toLowerCase() === hash.toLowerCase() &&
+        s.filePath === path
+      )
+        count++;
+    });
+    return count;
   }
   getIpStreamCount(ip: string): number {
     let count = 0;

@@ -48,6 +48,8 @@ export function downloadTorrent(
                 paused: d?.files.get(f.path)?.paused || false,
                 streamed: d?.files.get(f.path)?.streamed || false,
                 progress: f.progress,
+                size: f.length,
+                downloaded: f.downloaded,
               };
             }),
             progress: t.progress,
@@ -63,6 +65,7 @@ export function downloadTorrent(
             downloaded: t.downloaded,
             stopped: false,
             status: d?.status || "setted",
+            idling: d?.isIdling() || false,
           };
           res.status(200).json(resp);
         },

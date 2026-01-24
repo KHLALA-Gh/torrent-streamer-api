@@ -34,14 +34,35 @@ export function downloadFile(
         hash,
         res,
         path,
-        (fileDownload) => {
-          console.log("waaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        (d) => {
           state.openStreams?.removeStreamAndLog(streamID);
           if (
             !state.openStreams?.getTorrentCount(torrent.infoHash) &&
-            download.type === "stream"
+            d.type === "stream"
           ) {
             download.pauseFiles(torrent);
+          }
+          if (
+            !state.openStreams?.getFileStreamCount(torrent.infoHash, file.path)
+          ) {
+            let t = setTimeout(() => {
+              if (
+                state.openStreams?.getFileStreamCount(
+                  torrent.infoHash,
+                  file.path,
+                )
+              )
+                return;
+              const f = d.files.get(file.path);
+              d.files.set(file.path, {
+                paused: f?.paused || false,
+                selected: f?.selected || false,
+                streamed: false,
+              });
+            }, 20_000);
+            d.once("stream", (_, f) => {
+              if (file.path === f.path) clearTimeout(t);
+            });
           }
         },
         range,
