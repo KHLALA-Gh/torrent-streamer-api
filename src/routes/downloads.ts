@@ -19,12 +19,14 @@ export function getDownloads(
         const files = d.getFiles(t);
         let downloadSize = 0;
         let selectedFilesCount = 0;
+        let downloaded = 0;
         t.files.forEach((f) => {
           const has =
             d.files.get(f.path)?.selected || d.files.get(f.path)?.streamed;
           if (has) {
             downloadSize += f.length;
             selectedFilesCount++;
+            downloaded += f.downloaded;
           }
         });
         resp.push({
@@ -32,6 +34,7 @@ export function getDownloads(
           infoHash: d.infoHash,
           path: d.path,
           progress: t.progress,
+          isComplete: d.isComplete(t),
           upSpeed: t.uploadSpeed,
           downSpeed: t.downloadSpeed,
           paused: d.isPaused(),
@@ -39,7 +42,7 @@ export function getDownloads(
           files,
           downloadSize,
           totalSize: t.length,
-          downloaded: selectedFilesCount ? t.downloaded : 0,
+          downloaded: selectedFilesCount ? downloaded : 0,
           stopped: d.stopped,
           status: d.status,
         });
@@ -110,6 +113,45 @@ export function setDownloads(
         err: "server error",
       });
     }
+  });
+}
+
+export function editDownload(
+  router: Router,
+  config: HandlerConfig,
+  state: State,
+) {
+  router.put("/api/downloads/:hash/files", async (req, res) => {
+    try {
+      let download = state.streamer.getDownload(req.params.hash);
+      if (!download) {
+        res.status(404).json({
+          err: "download not found",
+        });
+        return;
+      }
+      const selectedFiles: string[] = req.body.selectedFiles;
+      if (!(selectedFiles instanceof Array)) {
+        res.status(400).json({
+          err: "selectedFiles must be an array",
+        });
+        return;
+      }
+      const files = new Set(selectedFiles);
+      download.files.forEach((f, path) => {
+        f.selected = files.has(path);
+        f.paused = files.has(path) ? false : f.paused;
+      });
+      const torrent = await state.streamer.get(req.params.hash);
+      if (!torrent) {
+        res.status(404).json({
+          err: "torrent not found",
+        });
+        return;
+      }
+      download.stopped = false;
+      res.status(200).json({ selectCount: download.applySelection(torrent) });
+    } catch (err) {}
   });
 }
 

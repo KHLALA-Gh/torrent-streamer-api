@@ -66,6 +66,7 @@ export function downloadTorrent(
             stopped: false,
             status: d?.status || "setted",
             idling: d?.isIdling() || false,
+            isComplete: d?.isComplete(t) || false,
           };
           res.status(200).json(resp);
         },

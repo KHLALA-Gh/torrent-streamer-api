@@ -21,9 +21,10 @@ function getTorrnetFiles(torrent: Torrent): TorrentFileMetaData[] {
 export function getFiles(
   router: Router,
   config: Partial<HandlerConfig>,
-  state: State
+  state: State,
 ) {
   router.get("/api/torrents/:hash/files", async (req, res) => {
+    let stop: ((text: string) => void) | undefined;
     try {
       let hash = req.params.hash;
       let to = setTimeout(() => {
@@ -33,12 +34,12 @@ export function getFiles(
       req.on("close", () => {
         clearTimeout(to);
       });
-      let stop = state.logger?.logTask(`fetching torrent : ${hash}`);
+      stop = state.logger?.logTask(`fetching torrent : ${hash}`);
 
       let torrent = await state.streamer?.getTorrent(hash);
       if (stop)
         stop(
-          `Done!\nInfo Hash : ${hash}\nName : ${torrent?.name}\nFiles : ${torrent?.files.length}`
+          `Done!\nInfo Hash : ${hash}\nName : ${torrent?.name}\nFiles : ${torrent?.files.length}`,
         );
       clearTimeout(to);
       if (!torrent) {
@@ -51,6 +52,8 @@ export function getFiles(
       if (res.headersSent) return;
       res.status(200).json(files);
     } catch (err) {
+      if (typeof stop === "function")
+        stop("error while getting torrent " + err);
       console.log("error when requesting torrent files :", err);
       res.status(500).json({
         error: "Internal Server Error",

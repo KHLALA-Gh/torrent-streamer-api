@@ -50,4 +50,5 @@ export interface TorrentDownload {
   stopped: boolean;
   status: DownloadStatus;
   idling: boolean;
+  isComplete: boolean;
 }

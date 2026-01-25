@@ -80,7 +80,11 @@ export class Streamer extends Webtorrent {
     if (torrent && !torrent.name) {
       torrent = await new Promise<WebTorrent.Torrent>((res, rej) => {
         if (!torrent) return rej("torrent is undefined");
+        let t = setTimeout(() => {
+          rej(new Error("torrent fetch timeout"));
+        }, 20_000);
         torrent.once("ready", () => {
+          clearTimeout(t);
           if (!torrent) {
             download.status = "error";
             return rej();
@@ -88,13 +92,21 @@ export class Streamer extends Webtorrent {
 
           res(torrent);
         });
-        torrent.once("error", (err) => rej(err));
+        torrent.once("error", (err) => {
+          clearTimeout(t);
+          rej(err);
+        });
       });
     }
     if (torrent && torrent.name) {
       return torrent;
     }
     torrent = await new Promise<WebTorrent.Torrent>((res, rej) => {
+      let t = setTimeout(() => {
+        this.deleteDownload(download.infoHash);
+
+        rej(new Error("torrent fetch timeout"));
+      }, 20_000);
       torrent = this.add(
         createMagnetLink(hash, trackers, wsTrackers),
         {
@@ -102,16 +114,21 @@ export class Streamer extends Webtorrent {
           path: opts?.path || this.defaultTorrentPath,
         },
         (torrent) => {
+          clearTimeout(t);
           torrent.files.forEach((file) => file.deselect());
           this.deleteDownload(download.infoHash);
         },
       );
       torrent.once("ready", () => {
+        clearTimeout(t);
         if (!torrent) return rej();
 
         res(torrent);
       });
       torrent.once("error", (err) => {
+        clearTimeout(t);
+        this.deleteDownload(download.infoHash);
+
         rej(err);
       });
     });
@@ -406,25 +423,34 @@ export class Streamer extends Webtorrent {
       torrent: undefined,
     });
     this.saveDownload(d);
-    let torrent = this.add(infoHash, opts, (t: WebTorrent.Torrent) => {
-      const download = new Download({
-        selectedFiles: files || t.files.map((f) => f.path),
-        status: "setted",
-        infoHash: t.infoHash,
-        torrent,
-      });
-      if (stopped) {
-        download.stop(t);
-      } else if (paused) {
-        download.pauseFiles(t);
-      } else {
-        download.applySelection(t);
-      }
-      download.type = "torrent";
-      this.saveDownload(download);
-      if (cb) cb(t);
-    });
+    let timeout = setTimeout(() => {
+      this.deleteDownload(infoHash);
+    }, 20_000);
+    let torrent = this.add(
+      createMagnetLink(infoHash, trackers, wsTrackers),
+      opts,
+      (t: WebTorrent.Torrent) => {
+        clearTimeout(timeout);
+        const download = new Download({
+          selectedFiles: files || t.files.map((f) => f.path),
+          status: "setted",
+          infoHash: t.infoHash,
+          torrent,
+        });
+        if (stopped) {
+          download.stop(t);
+        } else if (paused) {
+          download.pauseFiles(t);
+        } else {
+          download.applySelection(t);
+        }
+        download.type = "torrent";
+        this.saveDownload(download);
+        if (cb) cb(t);
+      },
+    );
     torrent.on("error", (err) => {
+      clearTimeout(timeout);
       const download = new Download({
         selectedFiles: [],
         status: "error",
@@ -540,6 +566,15 @@ export class Download extends EventEmitter<DownloadEvents> {
 
     this.type = type || "stream";
     this.stopped = false;
+  }
+  isComplete(torrent: Webtorrent.Torrent): boolean {
+    for (let f of torrent.files) {
+      const file = this.files.get(f.path);
+      if (!file) continue;
+      if (file.streamed) return false;
+      if (file.selected && f.progress !== 1) return false;
+    }
+    return true;
   }
   isPaused(): boolean {
     for (let f of this.files.values()) {

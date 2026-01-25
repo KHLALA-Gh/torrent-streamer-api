@@ -14,6 +14,7 @@ import { verifyState } from "./routes/middleware.js";
 import { downloadTorrent } from "./routes/downloadTorrent.js";
 import {
   deleteDownload,
+  editDownload,
   getDownloads,
   pauseDownload,
   setDownloads,
@@ -56,5 +57,6 @@ export function TorrentStreamerApi(
   status(router, c, state);
   downloadTorrent(router, c, state);
   setDownloads(router, c, state);
+  editDownload(router, c, state);
   return router;
 }
