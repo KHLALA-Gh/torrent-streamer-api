@@ -59,6 +59,7 @@ export function downloadFile(
                 selected: f?.selected || false,
                 streamed: false,
               });
+              d.applySelection(torrent);
             }, 20_000);
             d.once("stream", (_, f) => {
               if (file.path === f.path) clearTimeout(t);

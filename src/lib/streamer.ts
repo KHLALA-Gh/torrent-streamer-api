@@ -401,8 +401,20 @@ export class Streamer extends Webtorrent {
         opts.path || this.defaultTorrentPath,
         t.name,
       );
-      if (sameRealPath(oldTorrentPath, newTorrentPath))
-        throw new Error("already downloading");
+      if (sameRealPath(oldTorrentPath, newTorrentPath)) {
+        let d = new Download({
+          selectedFiles: files || t.files.map((f) => f.path),
+          type: "torrent",
+          torrent: t,
+          infoHash: t.infoHash,
+          status: "setted",
+        });
+        d.stopped = stopped || false;
+        this.saveDownload(d);
+        d.applySelection(t);
+        return;
+      }
+
       await new Promise<void>((res, rej) =>
         t.destroy({}, (err) => {
           if (err) return rej(err);
@@ -629,10 +641,10 @@ export class Download extends EventEmitter<DownloadEvents> {
     if (this.stopped) throw new Error("download is stopped");
     let selectCount = 0;
     torrent.files.forEach((file) => {
-      if (this.files.get(file.path)?.selected) {
+      const f = this.files.get(file.path);
+      if (f?.selected && !f?.paused) {
         selectCount++;
         file.select();
-        console.log("selected " + file.name);
       } else {
         file.deselect();
       }
