@@ -1,6 +1,5 @@
 import { Response } from "express";
 import WebTorrent from "webtorrent";
-import Webtorrent from "webtorrent";
 import { StreamState } from "../types/config.js";
 import ffmpeg from "fluent-ffmpeg";
 import { File, TorrentFile } from "../types/torrent.js";
@@ -45,7 +44,7 @@ function sameRealPath(a: string, b: string) {
     return false;
   }
 }
-export class Streamer extends Webtorrent {
+export class Streamer extends WebTorrent {
   public downloads: Map<string, Download>;
   public defaultTorrentPath: string = path.join(os.tmpdir(), "./homecinema");
   constructor() {
@@ -513,8 +512,8 @@ export class Streamer extends Webtorrent {
 }
 
 interface DownloadEvents {
-  file: [torrent: Webtorrent.Torrent, file: WebTorrent.TorrentFile];
-  torrent: [torrent: Webtorrent.Torrent];
+  file: [torrent: WebTorrent.Torrent, file: WebTorrent.TorrentFile];
+  torrent: [torrent: WebTorrent.Torrent];
   stream: [stream: NodeJS.ReadableStream, file: WebTorrent.TorrentFile];
   error: [err: Error];
   done: [];
@@ -526,7 +525,7 @@ export interface DownloadOpts<S extends DownloadStatus> {
   selectedFiles: string[];
   type?: downloadType;
   status: S;
-  torrent: S extends "setted" ? Webtorrent.Torrent : undefined;
+  torrent: S extends "setted" ? WebTorrent.Torrent : undefined;
   infoHash: string;
 }
 export interface DownloadFile {
@@ -579,7 +578,7 @@ export class Download extends EventEmitter<DownloadEvents> {
     this.type = type || "stream";
     this.stopped = false;
   }
-  isComplete(torrent: Webtorrent.Torrent): boolean {
+  isComplete(torrent: WebTorrent.Torrent): boolean {
     for (let f of torrent.files) {
       const file = this.files.get(f.path);
       if (!file) continue;
@@ -601,12 +600,7 @@ export class Download extends EventEmitter<DownloadEvents> {
     }
     return true;
   }
-  isDeselected(): boolean {
-    for (let f of this.files.values()) {
-      if (f.selected || f.streamed) return false;
-    }
-    return true;
-  }
+
   getFiles(torrent: WebTorrent.Torrent): File[] {
     let files: File[] = [];
     for (let f of torrent.files) {
@@ -792,7 +786,7 @@ export class Download extends EventEmitter<DownloadEvents> {
     });
   }
   static getStreamMetaData(
-    file: Webtorrent.TorrentFile,
+    file: WebTorrent.TorrentFile,
     range?: string,
   ): StreamMetadata {
     let fileExt = file.name.split(".").pop() || "";
