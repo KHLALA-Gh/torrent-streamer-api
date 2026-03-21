@@ -24,6 +24,10 @@ export function downloadFile(
       const path = decodeToUTF8(req.params.path);
       const hash = req.params.hash;
       const range = req.headers.range;
+      let downloadPath = req.query.path;
+      if (!(typeof downloadPath === "string")) {
+        downloadPath = undefined;
+      }
       let to = setTimeout(() => {
         if (!res.headersSent) {
           res.json({ error: "Request timeout" });
@@ -67,6 +71,7 @@ export function downloadFile(
           }
         },
         range,
+        { path: downloadPath },
       );
       clearTimeout(to);
       console.log("stream started file : " + file.name);

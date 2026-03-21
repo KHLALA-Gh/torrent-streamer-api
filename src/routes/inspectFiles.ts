@@ -27,6 +27,11 @@ export function getFiles(
     let stop: ((text: string) => void) | undefined;
     try {
       let hash = req.params.hash;
+      let path = req.query.path;
+      if (!(typeof path === "string")) {
+        path = undefined;
+      }
+
       let to = setTimeout(() => {
         if (res.headersSent) return;
         res.json([]);
@@ -36,7 +41,7 @@ export function getFiles(
       });
       stop = state.logger?.logTask(`fetching torrent : ${hash}`);
 
-      let torrent = await state.streamer?.getTorrent(hash);
+      let torrent = await state.streamer?.getTorrent(hash, { path });
       if (stop)
         stop(
           `Done!\nInfo Hash : ${hash}\nName : ${torrent?.name}\nFiles : ${torrent?.files.length}`,

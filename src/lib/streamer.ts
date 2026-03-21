@@ -228,6 +228,7 @@ export class Streamer extends WebTorrent {
     path: string | ((file: WebTorrent.TorrentFile) => boolean),
     cleanup: (torrent: Download) => void,
     range?: string,
+    opts?: WebTorrent.TorrentOptions,
   ): Promise<{
     torrent: WebTorrent.Torrent;
     download: Download;
@@ -239,7 +240,7 @@ export class Streamer extends WebTorrent {
         StreamerErrCode.INVALID_PATH,
       );
     }
-    let torrent = await this.getTorrent(hash);
+    let torrent = await this.getTorrent(hash, opts);
 
     let file: WebTorrent.TorrentFile | undefined;
 
