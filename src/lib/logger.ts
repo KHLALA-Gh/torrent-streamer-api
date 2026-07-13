@@ -62,11 +62,11 @@ export class Logger {
       if (!t) return;
       t.files.forEach((f) => {
         if (!d.files.get(f.path)?.selected) return;
-
+        const p = (f.progress * 100).toFixed(2);
         files.push({
           name: f.name,
           size: prettyBytes(f.length),
-          progress: `${(f.progress * 100).toFixed(2)}%`,
+          progress: `${+p >= 0 ? p : 0}%`,
         });
       });
       if (i === this.state.streamer.downloads.size - 1) {

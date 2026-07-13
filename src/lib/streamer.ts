@@ -81,6 +81,7 @@ export class Streamer extends WebTorrent {
         if (!torrent) return rej("torrent is undefined");
         let t = setTimeout(() => {
           rej(new Error("torrent fetch timeout"));
+          if (torrent) torrent.destroy();
         }, 20_000);
         torrent.once("ready", () => {
           clearTimeout(t);
@@ -412,12 +413,16 @@ export class Streamer extends WebTorrent {
         d.stopped = stopped || false;
         this.saveDownload(d);
         d.applySelection(t);
+        if (cb) cb(t);
         return;
       }
 
       await new Promise<void>((res, rej) =>
         t.destroy({}, (err) => {
-          if (err) return rej(err);
+          if (err) {
+            if (cb) cb(t);
+            return rej(err);
+          }
           res();
         }),
       );
@@ -470,6 +475,7 @@ export class Streamer extends WebTorrent {
         torrent: undefined,
       });
       this.saveDownload(download);
+      if (cb) cb(torrent);
     });
   }
   async stopDownload(hash: string, files?: string[]) {
@@ -725,7 +731,7 @@ export class Download extends EventEmitter<DownloadEvents> {
     }
     pipeline(stream, destination, (err: any) => {
       if (err) {
-        if (err.message.includes("prematurely")) {
+        if (err.code === "ERR_STREAM_PREMATURE_CLOSE") {
           console.log(`Client closed stream early for "${file?.name}"`);
         } else {
           console.error(`Stream error when streaming "${file?.name}":`, err);

@@ -55,7 +55,13 @@ export function getFiles(
       }
       let files = getTorrnetFiles(torrent);
       if (res.headersSent) return;
-      res.status(200).json(files);
+      res.status(200).json({
+        name: torrent.name,
+        path: torrent.path,
+        files,
+        torrentURL: torrent.torrentFileBlobURL,
+        size: torrent.length,
+      });
     } catch (err) {
       if (typeof stop === "function")
         stop("error while getting torrent " + err);
